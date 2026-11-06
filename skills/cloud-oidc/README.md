@@ -2,7 +2,7 @@
 
 Connect Nia Teams Agents to Alibaba Cloud RAM or Kubernetes RBAC based on Zero Trust Architecture ([NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)) and the open OIDC standard—with zero static keys stored in the sandbox.
 
-[Nia Teams](https://nia-teams.com) is a collaborative workspace where engineers and native Agents with isolated sandboxes work side by side in group chats: Agents run read-only diagnostics directly, and request temporary privilege elevation in the group-chat TaskBar whenever a production write requires approval from that Agent's `owner` / `admin`.
+[Nia Teams](https://nia-teams.com) is a collaboration platform for humans and Agents.
 
 ![Nia Teams GroupChat: read-only SLS findings and a TaskBar elevation request](../../docs/assets/group-chat-overview.png)
 
@@ -74,33 +74,29 @@ Enable either tier on its own, or combine both tiers together:
 - **Elevated permissions only**: set `sessionElevationEnabled: true`, state the gated operational scope in `systemPrompt` with zero standing cloud access, and provision only the `:elevated`-trusted cloud role (every cloud action requires TaskBar card approval).
 - **Ordinary + Elevated permissions together**: routine diagnostics run frictionlessly under Tier 1 ordinary permissions, while production mutations unlock Tier 2 elevated permissions via TaskBar approval.
 
-## 3. Quick Start — Five-Step Workflow
+## 3. Quick Start — Four-Step Workflow
 
-### 1. Install the skill where administrator cloud credentials live
+### 1. In the environment holding cloud administrator permissions, install the skill and describe the target permissions
 
 > **Important—run in the administrator environment, not in the target Agent**: Execute this setup **in the environment that holds cloud or cluster administrator permissions** (such as a workstation or ops terminal authenticated with administrator `aliyun` CLI or `kubectl`), **not inside the target Nia Teams Agent being authorized**.
 
-Run the install command from the top of this page in your administrator `aliyun` CLI or `kubectl` environment, and confirm the active cloud account or Kubernetes cluster context.
-
-### 2. Describe the two-tier permissions in the provisioning Agent
-
-Load `cloud-oidc` in the Agent running in that administrator environment (Claude Code, Codex, Pi, etc.) and specify the target Nia Teams Agent along with its ordinary and/or elevated permission scopes. These examples use fictional deployment values:
+In your administrator `aliyun` CLI or `kubectl` environment, run the install command from the top of this page and tell the Agent running in **that same environment** (Claude Code, Codex, Pi, etc.) which Nia Teams Agent to authorize and what ordinary and/or elevated permissions to grant. These examples use fictional deployment values:
 
 > Alibaba Cloud RAM: connect Nia Teams ops-agent to account 1000000000000001 in cn-hangzhou, Role name aliyun. Ordinary permissions: read payments-api logs in SLS project production; elevated permissions: allow restarting SAE application payments-api. Inspect existing OIDC Providers and policies and show me the provisioning plan for approval.
 
 > Kubernetes: connect cluster acme-production, namespace production, Role name k8s-prod. Ordinary permissions: read Pods, logs, and Deployments; elevated permissions: allow patching Deployments. Confirm API server OIDC configuration and show me the RBAC diff.
 
-### 3. Confirm the target Agent in your browser
+### 2. Confirm the target Agent in your browser
 
 Open the `https://nia-teams.com/connect/:code` link printed during pairing, sign in, select **the target Nia Teams Agent to be authorized**, and click **确认授权** (Confirm authorization). The approver must be that target Agent's `owner` or `admin`.
 
 ![Agent Connect approval page](../../docs/assets/agent-connect.png)
 
-### 4. Approve the provisioning plan and live boundary verification
+### 3. Approve the provisioning plan and live boundary verification
 
 Review the cloud account / cluster, OIDC Provider, Trust Policy, permission policies, and resource scope, then approve the CLI / `kubectl` writes. Using the administrator environment's CLI, the provisioning Agent creates or reuses providers and roles, configures IAM / RBAC, writes `systemPrompt`, `elevationPrompt`, and `sessionElevationEnabled` to the target Agent's AuthorizationRole, and tests live `aliyun --mode OIDC` or `kubectl auth can-i` behavior with both the ordinary and elevated tokens returned by the Role API.
 
-### 5. Use the target Agent in Nia Teams GroupChat
+### 4. Use the target Agent in Nia Teams GroupChat
 
 Once provisioned, the target Agent works immediately in Nia Teams with nothing extra to install inside its sandbox. Send this in Production Ops:
 

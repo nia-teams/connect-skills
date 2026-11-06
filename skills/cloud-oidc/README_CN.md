@@ -2,7 +2,7 @@
 
 基于零信任架构（[NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)）与开放标准 OIDC 协议，将 Nia Teams Agent 接入阿里云 RAM 或 Kubernetes RBAC，无需预埋静态密钥。
 
-[Nia Teams](https://nia-teams.com) 是面向研发团队的协作平台，人与具备独立沙箱环境的原生 Agent 在群聊中共处：Agent 日常直接执行只读诊断，涉及生产变更的写操作则在群聊 TaskBar 中发起临时提权申请，经该 Agent 的 `owner` / `admin` 批准后方可执行。
+[Nia Teams](https://nia-teams.com) 是人与 Agent 的协作平台。
 
 ![Nia Teams 群聊：只读 SLS 检查与 TaskBar 临时权限申请](../../docs/assets/group-chat-overview.png)
 
@@ -74,33 +74,29 @@ npx skills add nia-teams/connect-skills --skill cloud-oidc
 - **只配提权权限**：设 `sessionElevationEnabled: true`，`systemPrompt` 仅声明受控操作范围与提权要求，云侧只建信任 `:elevated` 的角色（日常零常驻云权限，每次操作前点卡审批）。
 - **普通权限 + 提权权限同时启用**：日常查日志走普通权限免打扰，生产变更走 TaskBar 点卡解锁提权权限。
 
-## 三、快速接入（五步完成配置与端到端验证）
+## 三、快速接入（四步完成配置与端到端验证）
 
-### 1. 在持有云管理员权限的环境中安装 Skill
+### 1. 在持有云管理员权限的环境中安装 Skill 并向当前 Agent 描述接入目标
 
 > **注意执行位置**：本配置流程**在持有云 / 集群管理员权限的环境里执行**（例如已登录管理员 `aliyun` CLI 或 `kubectl` 的工作台或运维终端），**不是在被授权的目标 Nia Teams Agent 沙箱里执行**。
 
-在你持有管理员 `aliyun` CLI 或 `kubectl` 凭证的环境中运行首屏安装命令，并确认当前云账号或集群上下文。
-
-### 2. 在持有管理员权限的 Agent 中描述接入目标
-
-在运行于该管理员环境中的 Agent（Claude Code、Codex、Pi 等）加载 `cloud-oidc`，告知要给哪个 Nia Teams Agent 授予哪一级权限。以下为虚构配置示例：
+在你持有管理员 `aliyun` CLI 或 `kubectl` 凭证的环境中运行首屏安装命令，直接向运行在**这同一个管理员环境中**的 Agent（Claude Code、Codex、Pi 等）描述要给哪个 Nia Teams Agent 授予哪一级权限。以下为虚构配置示例：
 
 > 阿里云 RAM：把 Nia Teams 的 ops-agent 接入账号 1000000000000001、cn-hangzhou，Role name 为 aliyun。普通权限：常驻只读 SLS 项目 production 的 payments-api 日志；提权权限：允许重启 SAE 应用 payments-api。先检查现有 OIDC Provider 和策略，给我确认配置计划。
 
 > Kubernetes：接入 acme-production 集群、production namespace，Role name 为 k8s-prod。普通权限：读 Pod、日志和 Deployment；提权权限：允许 patch Deployment。确认 API Server 的 OIDC 配置，给我审阅 RBAC diff。
 
-### 3. 在浏览器确认被授权的目标 Agent
+### 2. 在浏览器确认被授权的目标 Agent
 
 打开配对输出的 `https://nia-teams.com/connect/:code` 链接，登录 Nia Teams，选择**要被授予云权限的目标 Agent**，点击 **确认授权**。审批人须为该目标 Agent 的 `owner` 或 `admin`。
 
 ![Agent Connect 授权页](../../docs/assets/agent-connect.png)
 
-### 4. 审阅配置计划并自动完成权限边界验证
+### 3. 审阅配置计划并自动完成权限边界验证
 
 核对云账号 / 集群、OIDC Provider、Trust Policy、权限策略与资源范围后批准执行。配置侧 Agent 会利用当前环境的管理员 CLI 自动创建或复用 Provider 和角色、配置 IAM / RBAC，并将 `systemPrompt`、`elevationPrompt` 和 `sessionElevationEnabled` 写入目标 Agent 的 AuthorizationRole；随后用 Role API 返回的普通 Token 与提权 Token 实测 `aliyun --mode OIDC` 或 `kubectl auth can-i`，确认普通身份与提权身份的允许 / 拒绝边界完全符合预期。
 
-### 5. 回到 Nia Teams 群聊使用目标 Agent
+### 4. 回到 Nia Teams 群聊使用目标 Agent
 
 配置完成后，目标 Agent 即可直接使用，无需在目标 Agent 内安装任何额外插件。在 Production Ops 群聊发送：
 
