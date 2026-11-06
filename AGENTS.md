@@ -1,0 +1,42 @@
+# Repository maintenance
+
+## Documentation boundaries
+
+- Root `README.md` / `README_CN.md`: repository-level skill catalog and quick install index.
+- `skills/<skill>/README.md` / `README_CN.md`: per-skill human architecture and operational guides (shareable secondary entry links).
+- `skills/<skill>/SKILL.md` and `references/`: installed AI contract, self-contained.
+- This file: repository maintenance context.
+- `docs/SPECIFICATION.md`: public HTTP and JWT wire contract.
+- `npx skills add` installs `skills/<skill>/`; links inside `SKILL.md` and `references/` must resolve within that tree.
+- SKILL frontmatter contains only `name` and English `description`.
+- Keep the skill near 70–90 lines, organized into five cohesive modules.
+- Platform commands and concise two-phase prompt templates belong in references.
+
+## Contract invariants
+
+- Supported targets: Alibaba Cloud RAM, Kubernetes OIDC RBAC.
+- Issuer `https://nia-teams.com`; audience `nia-teams-workload`; RS256 JWKS `/oauth2/jwks`.
+- Pairing returns canonical `agentSlug`; role key is `agent.<agentSlug>.<name>`.
+- Cloud role names are independent of the Nia Teams role key.
+- Resident trust accepts ordinary and elevated subjects; elevated trust accepts only elevated.
+- Elevated tokens retain the resident Group and add `nia:elevated:role:<roleKey>`.
+- Kubernetes bindings match effective username/group prefixes.
+- Owner/admin human membership gates pairing, role configuration and elevation approval.
+- Workload subjects/groups authorize external resources independently of human membership.
+- Keep elevated ARNs exclusively in `elevationPrompt` (never in `systemPrompt`).
+- Role prompts use the target Agent's working language and substituted deployment values.
+- Cloud CLI administrator credentials stay local; setup and role tokens have separate purposes.
+- Revocation covers external trust/bindings and outstanding STS sessions.
+
+## Change and validation checklist
+
+- Synchronize contract changes across root catalog, skill READMEs, skill, references and specification.
+- Provider/policy/RBAC changes require target-specific human approval and live readback.
+- Screenshots use real Web components, fictional identities and 2x Chromium rendering.
+- Inspect all screenshots for clipping and ensure the close-up includes the composer.
+- Install Python dependencies from `requirements-dev.txt`; Bash and jq are required.
+- Run `python3 scripts/validate.py` and `git diff --check`.
+- The validator checks layout, frontmatter, links, PNG dimensions, fenced syntax and trust JSON.
+- This documentation-only repository has no package build or TypeScript target.
+- Live cloud checks require a separately approved target and local credentials.
+- Public release review and human preview approval are separate from a local commit.

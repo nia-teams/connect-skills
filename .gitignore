@@ -1,0 +1,6 @@
+__pycache__/
+.venv/
+role-response.json
+role-request.json
+*.credential
+.nia-oidc*/
