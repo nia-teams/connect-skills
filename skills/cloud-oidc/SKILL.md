@@ -1,6 +1,6 @@
 ---
 name: cloud-oidc
-description: Use when connecting a Nia Teams Agent to Alibaba Cloud RAM OIDC or Kubernetes OIDC RBAC via standard Workload OIDC, configuring ordinary permissions, human-confirmed elevated permissions, role prompts, and live token verification from an environment holding cloud administrator credentials.
+description: Use when connecting a Nia Teams Agent to Alibaba Cloud RAM OIDC, Tencent Cloud CAM OIDC, or Kubernetes OIDC RBAC via standard Workload OIDC, configuring ordinary permissions, human-confirmed elevated permissions, role prompts, and live token verification from an environment holding cloud administrator credentials.
 ---
 
 # Zero-Trust Cloud Access for Agents (`cloud-oidc`)
@@ -11,12 +11,13 @@ Run this skill in the environment holding cloud/cluster administrator CLI creden
 
 ## Scope & References
 
-Execute from an authenticated administrator `aliyun` CLI or `kubectl` environment.
+Execute from an authenticated administrator `aliyun` CLI, `tccli`, or `kubectl` environment.
 Administrator credentials stay in the provisioning environment; Nia Teams stores AuthorizationRole instructions.
 Installed resources resolve relative to this file:
 - Alibaba Cloud RAM: [references/aliyun.md](references/aliyun.md).
+- Tencent Cloud CAM: [references/tencentcloud.md](references/tencentcloud.md).
 - Kubernetes OIDC RBAC: [references/kubernetes.md](references/kubernetes.md).
-Confirm account/cluster, region/namespace, ordinary permission scope, elevated permission scope, and role name.
+Confirm account/UIN/cluster, region/namespace, ordinary permission scope, elevated permission scope, and role name.
 The suffix `name` matches `/^[a-z0-9][a-z0-9-]{0,31}$/`; cloud role names are separate objects.
 
 ## Agent Pairing & Authorization-Role API
@@ -39,7 +40,7 @@ Use its `elevation_kind: "agent-connect"` setup bearer for the selected Agent's 
 `GET /api/teams/:teamId/authorization-roles` reads existing configuration;
 `PUT /api/teams/:teamId/authorization-roles/:name` upserts the role and binding.
 Send all three fields: `systemPrompt`, `elevationPrompt`, `sessionElevationEnabled`.
-PUT returns `role` and `tokens`; GET the collection again to verify stored values.
+PUT returns `role` and `tokens`; GET the collection again to verify stored values (Nia Teams trims leading/trailing whitespace on prompt strings, so compare `.strip()` on readback).
 
 ## Identity Matrix & Two-Tier Permissions
 
@@ -54,7 +55,7 @@ cloud IAM / Kubernetes RBAC enforces workload access independently.
 ## Two-Phase Role Prompt Authoring
 
 Write in the target Agent's working language, matching the reference templates' concise factual style.
-Substitute approved account IDs, ARNs, regions, endpoint/CA paths and the exact role key.
+Substitute approved account IDs / UINs, ARNs, regions, endpoint/CA paths and the exact role key.
 `systemPrompt` states identity, ordinary scope, and executable commands using `nia role-token <ROLE_KEY>` when Tier 1 is enabled; when only Tier 2 is enabled, state the gated scope and zero standing access.
 Whenever Tier 2 is enabled (`sessionElevationEnabled: true`), require stating target object, action and side effects in `systemPrompt` before calling `request_session_elevation`.
 `elevationPrompt` (empty when Tier 2 is disabled) contains the elevated ARN or RBAC scope and executable elevated commands;
@@ -62,11 +63,11 @@ elevated ARNs belong exclusively here. Owner/admin approval delivers this prompt
 
 ## Provisioning & Live Verification
 
-Inspect CLI identity, providers, trust, policies and bindings before writes.
+Inspect CLI identity, existing OIDC providers (reuse `NiaTeamsWorkload` when already configured), trust, policies and bindings before writes.
 Confirm target objects, policy changes and side effects with the human, then provision the reviewed plan.
 Read back changed objects and attached policies; reconcile existing grants when updating tiers.
 Use `tokens.roleToken` and `tokens.elevatedRoleToken` from PUT for live checks, isolated from admin CLI auth.
-Alibaba: exchange via OIDC role assumption (`aliyun sts GetCallerIdentity --mode OIDC`);
+Alibaba: `aliyun sts GetCallerIdentity --mode OIDC`; Tencent: `sts AssumeRoleWithWebIdentity` + TC3 `GetCallerIdentity` (matching numeric `RoleId`);
 Kubernetes: `kubectl auth can-i` with explicit server, CA and token.
 Verify enabled tiers: ordinary token succeeds on Tier 1 and is denied on Tier 2;
 elevated token succeeds on Tier 2 (and retains Tier 1 when both are enabled).

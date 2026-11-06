@@ -14,7 +14,7 @@
 
 ## Contract invariants
 
-- Supported targets: Alibaba Cloud RAM, Kubernetes OIDC RBAC.
+- Supported targets: Alibaba Cloud RAM, Tencent Cloud CAM, Kubernetes OIDC RBAC.
 - Issuer `https://nia-teams.com`; audience `nia-teams-workload`; RS256 JWKS `/oauth2/jwks`.
 - Pairing returns canonical `agentSlug`; role key is `agent.<agentSlug>.<name>`.
 - Cloud role names are independent of the Nia Teams role key.

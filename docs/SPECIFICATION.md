@@ -1,6 +1,6 @@
 # Nia Teams Workload OIDC connection specification
 
-This contract covers the connection boundary for Alibaba Cloud RAM OIDC and Kubernetes OIDC RBAC.
+This contract covers the connection boundary for Alibaba Cloud RAM OIDC, Tencent Cloud CAM OIDC, and Kubernetes OIDC RBAC.
 Base URL: `https://nia-teams.com`. JSON requests use
 `Content-Type: application/json`. Success schemas below apply to 2xx responses.
 

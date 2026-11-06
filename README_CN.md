@@ -6,7 +6,7 @@
 
 ## 快速安装
 
-**在持有云或集群管理员权限的执行环境中**（例如你登着管理员 `aliyun` CLI / `kubectl` 的电脑终端或运维环境——**不要在被授权的目标 Agent 沙箱内执行**），安装指定 Skill：
+**在持有云或集群管理员权限的执行环境中**（例如你登着管理员 `aliyun` CLI、`tccli` 或 `kubectl` 的电脑终端或运维环境——**不要在被授权的目标 Agent 沙箱内执行**），安装指定 Skill：
 
 ```sh
 npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
@@ -16,7 +16,7 @@ npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
 
 | Skill | 用途说明 | 安装命令 | 说明文档 |
 | --- | --- | --- | --- |
-| [`cloud-oidc`](./skills/cloud-oidc/) | 基于零信任架构（[NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)）与开放标准 OIDC 协议，将 Nia Teams Agent 接入阿里云 RAM 或 Kubernetes RBAC，支持**普通权限**与**提权权限**两级隔离。 | `npx skills add nia-teams/connect-skills --skill cloud-oidc` | [简体中文](./skills/cloud-oidc/README_CN.md) · [English](./skills/cloud-oidc/README.md) · [`SKILL.md`](./skills/cloud-oidc/SKILL.md) |
+| [`cloud-oidc`](./skills/cloud-oidc/) | 基于零信任架构（[NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)）与开放标准 OIDC 协议，将 Nia Teams Agent 接入阿里云 RAM、腾讯云 CAM 或 Kubernetes RBAC，支持**普通权限**与**提权权限**两级隔离。 | `npx skills add nia-teams/connect-skills --skill cloud-oidc` | [简体中文](./skills/cloud-oidc/README_CN.md) · [English](./skills/cloud-oidc/README.md) · [`SKILL.md`](./skills/cloud-oidc/SKILL.md) |
 
 ## 仓库目录结构
 

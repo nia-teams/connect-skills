@@ -19,7 +19,7 @@ MARKDOWN = {
     'README.md', 'README_CN.md', 'AGENTS.md', 'docs/SPECIFICATION.md',
     'skills/cloud-oidc/README.md', 'skills/cloud-oidc/README_CN.md',
     'skills/cloud-oidc/SKILL.md',
-    *{f'skills/cloud-oidc/references/{p}.md' for p in ('aliyun', 'kubernetes')},
+    *{f'skills/cloud-oidc/references/{p}.md' for p in ('aliyun', 'tencentcloud', 'kubernetes')},
 }
 IMAGES = {'agent-connect.png', 'group-chat-overview.png', 'taskbar-elevation.png'}
 actual = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob('*.md') if '.git' not in p.parts}
@@ -28,7 +28,8 @@ assert not (ROOT / 'docs/cloud-oidc').exists(), 'Duplicate human guide directory
 assert (ROOT / 'LICENSE').is_file(), 'Missing license'
 skill_root = ROOT / 'skills/cloud-oidc'
 assert {p.relative_to(skill_root).as_posix() for p in skill_root.rglob('*') if p.is_file()} == {
-    'README.md', 'README_CN.md', 'SKILL.md', 'references/aliyun.md', 'references/kubernetes.md'
+    'README.md', 'README_CN.md', 'SKILL.md',
+    'references/aliyun.md', 'references/tencentcloud.md', 'references/kubernetes.md',
 }, 'Skill directory files differ'
 counts = dict(markdown=0, shell=0, json=0, yaml=0, links=0, images=0, trust=0)
 
@@ -66,7 +67,12 @@ def check_png(path):
 for image in sorted(IMAGES):
     check_png(ROOT / 'docs/assets' / image)
 
-AI_CONTRACT_FILES = {'skills/cloud-oidc/SKILL.md', 'skills/cloud-oidc/references/aliyun.md', 'skills/cloud-oidc/references/kubernetes.md'}
+AI_CONTRACT_FILES = {
+    'skills/cloud-oidc/SKILL.md',
+    'skills/cloud-oidc/references/aliyun.md',
+    'skills/cloud-oidc/references/tencentcloud.md',
+    'skills/cloud-oidc/references/kubernetes.md',
+}
 
 for relative in sorted(MARKDOWN):
     path = ROOT / relative
@@ -125,7 +131,7 @@ assert re.findall(r'^## (.+)$', skill, re.M) == [
 assert 35 <= len((ROOT / 'AGENTS.md').read_text().splitlines()) <= 50
 
 # Execute only local jq trust-document generators, isolated in a temporary directory.
-for platform in ('aliyun',):
+for platform in ('aliyun', 'tencentcloud'):
     text = (skill_root / f'references/{platform}.md').read_text()
     block = next(b for lang, b in re.findall(r'^```(\w+)\n(.*?)^```', text, re.M | re.S)
                  if lang == 'bash' and '> resident-trust.json' in b)
@@ -133,12 +139,20 @@ for platform in ('aliyun',):
         subprocess.run(['bash', '-euc', block], cwd=tmp, check=True)
         resident = json.loads((Path(tmp) / 'resident-trust.json').read_text())
         elevated = json.loads((Path(tmp) / 'elevated-trust.json').read_text())
-    r = resident['Statement'][0]['Condition']['StringEquals']
-    e = elevated['Statement'][0]['Condition']['StringEquals']
-    assert resident['Statement'][0]['Action'] == 'sts:AssumeRole'
-    assert resident['Statement'][0]['Principal'] == {
-        'Federated': ['acs:ram::<accountId>:oidc-provider/NiaTeamsWorkload']
-    }
+    if platform == 'aliyun':
+        r = resident['Statement'][0]['Condition']['StringEquals']
+        e = elevated['Statement'][0]['Condition']['StringEquals']
+        assert resident['Statement'][0]['Action'] == 'sts:AssumeRole'
+        assert resident['Statement'][0]['Principal'] == {
+            'Federated': ['acs:ram::<accountId>:oidc-provider/NiaTeamsWorkload']
+        }
+    else:
+        r = resident['statement'][0]['condition']['string_equal']
+        e = elevated['statement'][0]['condition']['string_equal']
+        assert resident['statement'][0]['action'] == 'name/sts:AssumeRoleWithWebIdentity'
+        assert resident['statement'][0]['principal'] == {
+            'federated': ['qcs::cam::uin/<uin>:oidc-provider/NiaTeamsWorkload']
+        }
     assert e['oidc:sub'] == 'role:agent.<agentSlug>.<name>:elevated'
     assert r['oidc:sub'] == ['role:agent.<agentSlug>.<name>', 'role:agent.<agentSlug>.<name>:elevated']
     for condition in (r, e):
@@ -152,13 +166,19 @@ for path in (skill_root / 'references').glob('*.md'):
         prompt = text.split('### ' + section, 1)[1].split('\n### ', 1)[0]
         assert 'acme-operator' not in prompt, f'Elevated ARN in resident prompt: {path}'
     templates = text.split('## Role prompt templates', 1)[1]
-    for boilerplate in ('set -eu', 'set +x', 'umask', 'mktemp', 'trap ',
-                        'GetCallerIdentity', 'AssumeRoleWithWebIdentity', 'auth can-i',
-                        'newly launched shell', '新启动的 shell'):
+    disallowed = ['set -eu', 'set +x', 'umask', 'mktemp', 'trap ',
+                  'GetCallerIdentity', 'auth can-i',
+                  'newly launched shell', '新启动的 shell']
+    if path.stem != 'tencentcloud':
+        disallowed.append('AssumeRoleWithWebIdentity')
+    for boilerplate in disallowed:
         assert boilerplate not in templates, f'Role prompt noise: {path}: {boilerplate}'
     assert 'request_session_elevation' in templates
     if path.stem == 'aliyun':
         assert 'sls GetLogs' in templates and 'sae RestartApplication' in templates
+    elif path.stem == 'tencentcloud':
+        assert 'DescribeInstances' in templates and 'RebootInstances' in templates
+        assert 'TC3-HMAC-SHA256' in templates
     else:
         assert 'get pods,deployments' in templates and 'logs deployment/payments-api' in templates
         assert 'rollout restart deployment/payments-api' in templates

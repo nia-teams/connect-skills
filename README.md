@@ -6,7 +6,7 @@ English | [简体中文](./README_CN.md)
 
 ## Quick Install
 
-Run the install command **in the environment that already holds cloud or cluster administrator permissions** (such as a workstation or ops environment authenticated with administrator `aliyun` CLI / `kubectl`—**not inside the target Agent being authorized**):
+Run the install command **in the environment that already holds cloud or cluster administrator permissions** (such as a workstation or ops environment authenticated with administrator `aliyun` CLI, `tccli`, or `kubectl`—**not inside the target Agent being authorized**):
 
 ```sh
 npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
@@ -16,7 +16,7 @@ npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
 
 | Skill | Description | Install Command | Documentation |
 | --- | --- | --- | --- |
-| [`cloud-oidc`](./skills/cloud-oidc/) | Connect a Nia Teams Agent to Alibaba Cloud RAM or Kubernetes RBAC following Zero Trust Architecture ([NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)) and the open OIDC standard, with two-tier privilege separation (**ordinary permissions** and **elevated permissions**). | `npx skills add nia-teams/connect-skills --skill cloud-oidc` | [English](./skills/cloud-oidc/README.md) · [简体中文](./skills/cloud-oidc/README_CN.md) · [`SKILL.md`](./skills/cloud-oidc/SKILL.md) |
+| [`cloud-oidc`](./skills/cloud-oidc/) | Connect a Nia Teams Agent to Alibaba Cloud RAM, Tencent Cloud CAM, or Kubernetes RBAC following Zero Trust Architecture ([NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)) and the open OIDC standard, with two-tier privilege separation (**ordinary permissions** and **elevated permissions**). | `npx skills add nia-teams/connect-skills --skill cloud-oidc` | [English](./skills/cloud-oidc/README.md) · [简体中文](./skills/cloud-oidc/README_CN.md) · [`SKILL.md`](./skills/cloud-oidc/SKILL.md) |
 
 ## Repository Layout
 

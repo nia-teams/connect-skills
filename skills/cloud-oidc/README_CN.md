@@ -1,6 +1,6 @@
 # Agent 零信任云权限接入（`cloud-oidc`）
 
-基于零信任架构（[NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)）与开放标准 OIDC 协议，将 Nia Teams Agent 接入阿里云 RAM 或 Kubernetes RBAC，无需预埋静态密钥。
+基于零信任架构（[NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)）与开放标准 OIDC 协议，将 Nia Teams Agent 接入阿里云 RAM、腾讯云 CAM 或 Kubernetes RBAC，无需预埋静态密钥。
 
 [Nia Teams](https://nia-teams.com) 是人与 Agent 的协作平台。
 
@@ -10,7 +10,7 @@
 npx skills add nia-teams/connect-skills --skill cloud-oidc
 ```
 
-> **执行位置**：请在**持有云或集群管理员权限的环境**中（例如已登录管理员 `aliyun` CLI 或 `kubectl` 的工作台 / 运维环境）安装并加载 [`SKILL.md`](./SKILL.md) 执行配置；**不要在被授权的目标 Agent 沙箱内运行本 Skill**。
+> **执行位置**：请在**持有云或集群管理员权限的环境**中（例如已登录管理员 `aliyun` CLI、`tccli` 或 `kubectl` 的工作台 / 运维环境）安装并加载 [`SKILL.md`](./SKILL.md) 执行配置；**不要在被授权的目标 Agent 沙箱内运行本 Skill**。
 
 [English](./README.md) | 简体中文
 
@@ -43,17 +43,19 @@ npx skills add nia-teams/connect-skills --skill cloud-oidc
 - **零信任与协议规范**：[NIST SP 800-207 (Zero Trust Architecture)](https://csrc.nist.gov/pubs/sp/800/207/final)、[NIST SP 800-207A (Cloud-Native Access Control)](https://csrc.nist.gov/pubs/sp/800/207/a/final)、[OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)、[OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html)、[RFC 7519 (JSON Web Token)](https://www.rfc-editor.org/rfc/rfc7519) 与 [RFC 7517 (JSON Web Key / JWKS)](https://www.rfc-editor.org/rfc/rfc7517)。
 - **云平台与集群官方支持文档**：
   - 阿里云：[基于 OIDC 的角色 SSO 概览](https://help.aliyun.com/zh/ram/overview-of-oidc-based-sso) · [STS `AssumeRoleWithOIDC` API 参考](https://help.aliyun.com/zh/ram/developer-reference/api-sts-2015-04-01-assumerolewithoidc)
+  - 腾讯云：[OIDC 角色 SSO 概览](https://cloud.tencent.com/document/product/598/96013) · [STS `AssumeRoleWithWebIdentity` API 参考](https://cloud.tencent.com/document/product/1312/73070)
   - Kubernetes：[OpenID Connect Tokens 认证官方文档](https://kubernetes.io/zh-cn/docs/reference/access-authn-authz/authentication/#openid-connect-tokens)
 
-沙箱内不存储任何长期云密钥，整个认证链路由 **Nia Teams（标准 OIDC IdP）** 与 **阿里云 RAM / Kubernetes API Server（原生 OIDC 验签方）** 通过 **非对称公私钥签名（RS256 私钥签发 + JWKS 公钥验签）** 分三步完成：
+沙箱内不存储任何长期云密钥，整个认证链路由 **Nia Teams（标准 OIDC IdP）** 与 **阿里云 RAM / 腾讯云 CAM / Kubernetes API Server（原生 OIDC 验签方）** 通过 **非对称公私钥签名（RS256 私钥签发 + JWKS 公钥验签）** 分三步完成：
 
 1. **云平台登记 Nia Teams 的 OIDC Discovery / JWKS 公钥与 Subject 信任条件（一次性配置）**
    - Nia Teams 按 [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) 与 [RFC 7517](https://www.rfc-editor.org/rfc/rfc7517) 公开元数据端点 `https://nia-teams.com/.well-known/openid-configuration` 与公钥集 `https://nia-teams.com/oauth2/jwks`。
-   - 管理员在阿里云 RAM 或 Kubernetes API Server 中将 `https://nia-teams.com` 注册为受信任的 OIDC Provider，并在 Trust Policy 或 RBAC RoleBinding 中将权限精确绑定到目标 Agent 的 `sub`（Subject）。
+   - 管理员在阿里云 RAM、腾讯云 CAM 或 Kubernetes API Server 中将 `https://nia-teams.com` 注册为受信任的 OIDC Provider，并在 Trust Policy 或 RBAC RoleBinding 中将权限精确绑定到目标 Agent 的 `sub`（Subject）。
 2. **Agent 运行时按当前 Session 状态实时领取短期签名 JWT**
    - Agent 在沙箱内调用 `nia role-token agent.ops-agent.aliyun`。Nia Teams 核验当前运行实例确实是绑定的目标 Agent 后，按当前是否处于人工审批窗口，实时签发短期普通身份 JWT（`sub: "role:agent.ops-agent.aliyun"`）或短期提权身份 JWT（`sub: "role:agent.ops-agent.aliyun:elevated"`）。
 3. **云平台用公开 JWKS 公钥验签并授予短期权限**
    - **阿里云 RAM / STS**：`aliyun` CLI 携带 JWT 调用 [STS `AssumeRoleWithOIDC`](https://help.aliyun.com/zh/ram/developer-reference/api-sts-2015-04-01-assumerolewithoidc)。阿里云使用 Nia Teams 公开的 JWKS 公钥验证签名与有效期，核对 `iss`、`aud`、`sub` 与目标 RAM Role 的 Trust Policy 匹配后，签发短期 STS 临时凭证。
+   - **腾讯云 CAM / STS**：Agent 携带 JWT 调用 [STS `AssumeRoleWithWebIdentity`](https://cloud.tencent.com/document/product/1312/73070)。腾讯云使用登记的 JWKS 公钥验证签名与有效期，核对 `iss`、`aud`、`sub` 与目标 CAM Role 的 Trust Policy 匹配后签发短期 STS 临时凭证，Agent 仅凭 Python 3 标准库即可在内存中完成 `TC3-HMAC-SHA256` 签名请求（沙箱无需预装 `tccli`）。
    - **Kubernetes API Server**：`kubectl` 直接将 JWT 作为 `Authorization: Bearer <JWT>` 发送至 API Server。API Server 按 [OpenID Connect Tokens](https://kubernetes.io/zh-cn/docs/reference/access-authn-authz/authentication/#openid-connect-tokens) 机制验签后提取 `sub` 与 `groups`，直接执行 RBAC RoleBinding 鉴权。
 
 ## 二、Nia Teams 的两级权限模型：普通权限与提权权限
@@ -78,11 +80,13 @@ npx skills add nia-teams/connect-skills --skill cloud-oidc
 
 ### 1. 在持有云管理员权限的环境中安装 Skill 并向当前 Agent 描述接入目标
 
-> **注意执行位置**：本配置流程**在持有云 / 集群管理员权限的环境里执行**（例如已登录管理员 `aliyun` CLI 或 `kubectl` 的工作台或运维终端），**不是在被授权的目标 Nia Teams Agent 沙箱里执行**。
+> **注意执行位置**：本配置流程**在持有云 / 集群管理员权限的环境里执行**（例如已登录管理员 `aliyun` CLI、`tccli` 或 `kubectl` 的工作台或运维终端），**不是在被授权的目标 Nia Teams Agent 沙箱里执行**。
 
-在你持有管理员 `aliyun` CLI 或 `kubectl` 凭证的环境中运行首屏安装命令，直接向运行在**这同一个管理员环境中**的 Agent（Claude Code、Codex、Pi 等）描述要给哪个 Nia Teams Agent 授予哪一级权限。以下为虚构配置示例：
+在你持有管理员 `aliyun` CLI、`tccli` 或 `kubectl` 凭证的环境中运行首屏安装命令，直接向运行在**这同一个管理员环境中**的 Agent（Claude Code、Codex、Pi 等）描述要给哪个 Nia Teams Agent 授予哪一级权限。以下为虚构配置示例：
 
 > 阿里云 RAM：把 Nia Teams 的 ops-agent 接入账号 1000000000000001、cn-hangzhou，Role name 为 aliyun。普通权限：常驻只读 SLS 项目 production 的 payments-api 日志；提权权限：允许重启 SAE 应用 payments-api。先检查现有 OIDC Provider 和策略，给我确认配置计划。
+
+> 腾讯云 CAM：把 Nia Teams 的 ops-agent 接入账号 UIN 100000000001、ap-beijing，Role name 为 tencent。普通权限：常驻只读北京地域 CVM 实例列表；提权权限：允许重启实例 ins-00000001。先检查现有 OIDC Provider 和策略，给我确认配置计划。
 
 > Kubernetes：接入 acme-production 集群、production namespace，Role name 为 k8s-prod。普通权限：读 Pod、日志和 Deployment；提权权限：允许 patch Deployment。确认 API Server 的 OIDC 配置，给我审阅 RBAC diff。
 
@@ -94,7 +98,7 @@ npx skills add nia-teams/connect-skills --skill cloud-oidc
 
 ### 3. 审阅配置计划并自动完成权限边界验证
 
-核对云账号 / 集群、OIDC Provider、Trust Policy、权限策略与资源范围后批准执行。配置侧 Agent 会利用当前环境的管理员 CLI 自动创建或复用 Provider 和角色、配置 IAM / RBAC，并将 `systemPrompt`、`elevationPrompt` 和 `sessionElevationEnabled` 写入目标 Agent 的 AuthorizationRole；随后用 Role API 返回的普通 Token 与提权 Token 实测 `aliyun --mode OIDC` 或 `kubectl auth can-i`，确认普通身份与提权身份的允许 / 拒绝边界完全符合预期。
+核对云账号 / 集群、OIDC Provider、Trust Policy、权限策略与资源范围后批准执行。配置侧 Agent 会利用当前环境的管理员 CLI 自动创建或复用 Provider 和角色、配置 IAM / RBAC，并将 `systemPrompt`、`elevationPrompt` 和 `sessionElevationEnabled` 写入目标 Agent 的 AuthorizationRole；随后用 Role API 返回的普通 Token 与提权 Token 实测 `aliyun --mode OIDC`、腾讯云 `AssumeRoleWithWebIdentity` 或 `kubectl auth can-i`，确认普通身份与提权身份的允许 / 拒绝边界完全符合预期。
 
 ### 4. 回到 Nia Teams 群聊使用目标 Agent
 
@@ -114,7 +118,7 @@ npx skills add nia-teams/connect-skills --skill cloud-oidc
 
 - **阿里云 RAM OIDC**（参考配置：[aliyun.md](./references/aliyun.md) · 官方文档：[基于 OIDC 的角色 SSO](https://help.aliyun.com/zh/ram/overview-of-oidc-based-sso)、[`AssumeRoleWithOIDC`](https://help.aliyun.com/zh/ram/developer-reference/api-sts-2015-04-01-assumerolewithoidc)）：Provider `NiaTeamsWorkload`（通过 `aliyun ims` 管理），IssuerUrl 与 ClientIds 使用上述值；Fingerprints 填入整条 TLS 证书链（叶子证书、中间 CA 与根 CA）逗号分隔的 SHA-1 指纹。角色 Trust Policy 的 Action 为 `sts:AssumeRole`，Federated Principal 为 `acs:ram::<accountId>:oidc-provider/NiaTeamsWorkload`；`oidc:iss`、`oidc:aud`、`oidc:sub` 精确匹配。普通权限角色 `oidc:sub` 接受 `role:agent.ops-agent.aliyun` 与 `role:agent.ops-agent.aliyun:elevated`，提权角色只接受后者。实测验证工具版本：阿里云 CLI `3.5.2` 与 `3.4.11`。
 - **Kubernetes OIDC RBAC**（参考配置：[kubernetes.md](./references/kubernetes.md) · 官方文档：[OpenID Connect Tokens](https://kubernetes.io/zh-cn/docs/reference/access-authn-authz/authentication/#openid-connect-tokens)）：API Server 配置 issuer、client ID、`username-claim=sub`、`groups-claim=groups`、空 groups prefix（采用 Group 绑定时 `username-prefix=-` 可选）。推荐采用 Group 绑定：普通权限绑 `role:agent.ops-agent.k8s-prod`，提权权限绑 `nia:elevated:role:agent.ops-agent.k8s-prod`；User 绑定普通权限接受普通与提权 Subject，提权绑定只接受提权 Subject。RoleBinding 限定 namespace；ClusterRoleBinding 为集群级。托管集群须支持该 OIDC 认证参数配置。实测验证版本：`kubectl v1.32.2`、阿里云 ACK `v1.35.2-aliyun.1`。
-- **腾讯云 CAM OIDC**：即将支持。
+- **腾讯云 CAM OIDC**（参考配置：[tencentcloud.md](./references/tencentcloud.md) · 官方文档：[OIDC 角色 SSO 概览](https://cloud.tencent.com/document/product/598/96013)、[`CreateOIDCConfig`](https://cloud.tencent.com/document/product/598/73473)、[`AssumeRoleWithWebIdentity`](https://cloud.tencent.com/document/product/1312/73070)）：优先通过 `tccli cam DescribeOIDCConfig` 检查并复用已有的 `NiaTeamsWorkload` Provider（新账号按 API 文档以完整 JWKS JSON 的单行 Base64 与 `AutoRotateKey=1` 创建）。角色 Trust Policy 的 `action` 为 `name/sts:AssumeRoleWithWebIdentity`，Federated Principal 为 `qcs::cam::uin/<UIN>:oidc-provider/NiaTeamsWorkload`；`oidc:iss`、`oidc:aud`、`oidc:sub` 精确匹配（普通角色接受普通与 `:elevated` 两个 Subject，提权角色只接受 `:elevated`）。最小权限自定义策略通过六段式资源 QCS 简写地域码（如北京 `qcs::cvm:bj:uin/<UIN>:instance/*`）限定资源，STS `GetCallerIdentity` 按角色数值 `RoleId` 校验，目标 Agent 沙箱仅凭 Python 3 标准库即可完成 STS 换票与 `TC3-HMAC-SHA256` 签名请求。实测验证工具版本：`tccli 3.1.197.1`、`Python 3.9.6`（复用已有 Provider 实测完整两级角色创建、策略绑定与正负向换票验证；新建 Provider `CreateOIDCConfig` 本次未实测，新账号请先核验命令参数）。
 
 ## 五、Token 结构与角色权限边界
 

@@ -1,6 +1,6 @@
 # Zero-Trust Cloud Access for Agents (`cloud-oidc`)
 
-Connect Nia Teams Agents to Alibaba Cloud RAM or Kubernetes RBAC based on Zero Trust Architecture ([NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)) and the open OIDC standard—with zero static keys stored in the sandbox.
+Connect Nia Teams Agents to Alibaba Cloud RAM, Tencent Cloud CAM, or Kubernetes RBAC based on Zero Trust Architecture ([NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)) and the open OIDC standard—with zero static keys stored in the sandbox.
 
 [Nia Teams](https://nia-teams.com) is a collaboration platform for humans and Agents.
 
@@ -10,7 +10,7 @@ Connect Nia Teams Agents to Alibaba Cloud RAM or Kubernetes RBAC based on Zero T
 npx skills add nia-teams/connect-skills --skill cloud-oidc
 ```
 
-> **Where to run**: Install and load [`SKILL.md`](./SKILL.md) **in the environment that holds cloud or cluster administrator permissions** (for example, an engineer workstation or ops environment authenticated with administrator `aliyun` CLI or `kubectl`)—**do not run this skill inside the target Agent being authorized**.
+> **Where to run**: Install and load [`SKILL.md`](./SKILL.md) **in the environment that holds cloud or cluster administrator permissions** (for example, an engineer workstation or ops environment authenticated with administrator `aliyun` CLI, `tccli`, or `kubectl`)—**do not run this skill inside the target Agent being authorized**.
 
 English | [简体中文](./README_CN.md)
 
@@ -43,17 +43,19 @@ This integration builds directly on Zero Trust standards, published OIDC/JOSE sp
 - **Zero Trust & protocol specifications**: [NIST SP 800-207 (Zero Trust Architecture)](https://csrc.nist.gov/pubs/sp/800/207/final), [NIST SP 800-207A (Cloud-Native Access Control)](https://csrc.nist.gov/pubs/sp/800/207/a/final), [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html), [RFC 7519 (JSON Web Token)](https://www.rfc-editor.org/rfc/rfc7519), and [RFC 7517 (JSON Web Key / JWKS)](https://www.rfc-editor.org/rfc/rfc7517).
 - **Official platform documentation**:
   - Alibaba Cloud: [Overview of role-based OIDC SSO](https://www.alibabacloud.com/help/en/ram/overview-of-oidc-based-sso) · [STS `AssumeRoleWithOIDC` API reference](https://www.alibabacloud.com/help/en/ram/developer-reference/api-sts-2015-04-01-assumerolewithoidc)
+  - Tencent Cloud: [Overview of OIDC role-based SSO](https://www.tencentcloud.com/document/product/598/58323) · [STS `AssumeRoleWithWebIdentity` API reference](https://www.tencentcloud.com/document/product/1150/49454)
   - Kubernetes: [OpenID Connect Tokens authentication](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#openid-connect-tokens)
 
-Zero long-lived cloud keys sit in the sandbox; authentication runs between **Nia Teams (OIDC IdP)** and **Alibaba Cloud RAM / Kubernetes API Server (OIDC verifier)** using **asymmetric public/private key signatures (RS256 private-key signing + JWKS public-key verification)** across three steps:
+Zero long-lived cloud keys sit in the sandbox; authentication runs between **Nia Teams (OIDC IdP)** and **Alibaba Cloud RAM / Tencent Cloud CAM / Kubernetes API Server (OIDC verifier)** using **asymmetric public/private key signatures (RS256 private-key signing + JWKS public-key verification)** across three steps:
 
 1. **Register Nia Teams’ OIDC Discovery / JWKS keys and Subject trust conditions in your cloud (one-time setup)**
    - Following [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) and [RFC 7517](https://www.rfc-editor.org/rfc/rfc7517), Nia Teams publishes metadata at `https://nia-teams.com/.well-known/openid-configuration` and public verification keys at `https://nia-teams.com/oauth2/jwks`.
-   - An administrator registers `https://nia-teams.com` as a trusted OIDC Provider in Alibaba Cloud RAM or on the Kubernetes API server, and pins Trust Policies or RBAC RoleBindings to the target Agent’s exact `sub` (Subject).
+   - An administrator registers `https://nia-teams.com` as a trusted OIDC Provider in Alibaba Cloud RAM, Tencent Cloud CAM, or on the Kubernetes API server, and pins Trust Policies or RBAC RoleBindings to the target Agent’s exact `sub` (Subject).
 2. **Mint a short-lived signed JWT bound to the Agent and its current Session state**
    - Inside its sandbox, the Agent runs `nia role-token agent.ops-agent.aliyun`. After verifying that the caller is the bound target Agent, Nia Teams signs a short-lived RS256 JWT carrying either the ordinary subject (`sub: "role:agent.ops-agent.aliyun"`) or—within a human-approved window—the elevated subject (`sub: "role:agent.ops-agent.aliyun:elevated"`).
 3. **Verify the signature against the public JWKS and grant short-lived access**
    - **Alibaba Cloud RAM / STS**: the `aliyun` CLI submits the JWT to [STS `AssumeRoleWithOIDC`](https://www.alibabacloud.com/help/en/ram/developer-reference/api-sts-2015-04-01-assumerolewithoidc). Alibaba Cloud verifies the RS256 signature and expiration against Nia Teams’ public JWKS, confirms that `iss`, `aud`, and `sub` match the target RAM Role’s Trust Policy, and issues short-lived STS session credentials.
+   - **Tencent Cloud CAM / STS**: the Agent submits the JWT to [STS `AssumeRoleWithWebIdentity`](https://www.tencentcloud.com/document/product/1150/49454). Tencent Cloud verifies the signature and expiration against the registered JWKS public keys, confirms `iss`, `aud`, and `sub` against the CAM Role’s Trust Policy, and issues short-lived STS credentials; the Agent signs API requests in memory with `TC3-HMAC-SHA256` using only the Python 3 standard library (no `tccli` installation needed inside the sandbox).
    - **Kubernetes API Server**: `kubectl` sends the JWT directly in `Authorization: Bearer <JWT>`. Following [OpenID Connect Tokens authentication](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#openid-connect-tokens), the API server verifies the signature against the OIDC public keys, extracts `sub` and `groups`, and enforces RBAC RoleBindings directly.
 
 ## 2. Nia Teams’ Two-Tier Privilege Model: Ordinary & Elevated Permissions
@@ -78,11 +80,13 @@ Enable either tier on its own, or combine both tiers together:
 
 ### 1. In the environment holding cloud administrator permissions, install the skill and describe the target permissions
 
-> **Important—run in the administrator environment, not in the target Agent**: Execute this setup **in the environment that holds cloud or cluster administrator permissions** (such as a workstation or ops terminal authenticated with administrator `aliyun` CLI or `kubectl`), **not inside the target Nia Teams Agent being authorized**.
+> **Important—run in the administrator environment, not in the target Agent**: Execute this setup **in the environment that holds cloud or cluster administrator permissions** (such as a workstation or ops terminal authenticated with administrator `aliyun` CLI, `tccli`, or `kubectl`), **not inside the target Nia Teams Agent being authorized**.
 
-In your administrator `aliyun` CLI or `kubectl` environment, run the install command from the top of this page and tell the Agent running in **that same environment** (Claude Code, Codex, Pi, etc.) which Nia Teams Agent to authorize and what ordinary and/or elevated permissions to grant. These examples use fictional deployment values:
+In your administrator `aliyun` CLI, `tccli`, or `kubectl` environment, run the install command from the top of this page and tell the Agent running in **that same environment** (Claude Code, Codex, Pi, etc.) which Nia Teams Agent to authorize and what ordinary and/or elevated permissions to grant. These examples use fictional deployment values:
 
 > Alibaba Cloud RAM: connect Nia Teams ops-agent to account 1000000000000001 in cn-hangzhou, Role name aliyun. Ordinary permissions: read payments-api logs in SLS project production; elevated permissions: allow restarting SAE application payments-api. Inspect existing OIDC Providers and policies and show me the provisioning plan for approval.
+
+> Tencent Cloud CAM: connect Nia Teams ops-agent to account UIN 100000000001 in ap-beijing, Role name tencent. Ordinary permissions: read CVM instances in Beijing; elevated permissions: allow rebooting instance ins-00000001. Inspect existing OIDC Providers and policies and show me the provisioning plan for approval.
 
 > Kubernetes: connect cluster acme-production, namespace production, Role name k8s-prod. Ordinary permissions: read Pods, logs, and Deployments; elevated permissions: allow patching Deployments. Confirm API server OIDC configuration and show me the RBAC diff.
 
@@ -94,7 +98,7 @@ Open the `https://nia-teams.com/connect/:code` link printed during pairing, sign
 
 ### 3. Approve the provisioning plan and live boundary verification
 
-Review the cloud account / cluster, OIDC Provider, Trust Policy, permission policies, and resource scope, then approve the CLI / `kubectl` writes. Using the administrator environment's CLI, the provisioning Agent creates or reuses providers and roles, configures IAM / RBAC, writes `systemPrompt`, `elevationPrompt`, and `sessionElevationEnabled` to the target Agent's AuthorizationRole, and tests live `aliyun --mode OIDC` or `kubectl auth can-i` behavior with both the ordinary and elevated tokens returned by the Role API.
+Review the cloud account / cluster, OIDC Provider, Trust Policy, permission policies, and resource scope, then approve the CLI / `kubectl` writes. Using the administrator environment's CLI, the provisioning Agent creates or reuses providers and roles, configures IAM / RBAC, writes `systemPrompt`, `elevationPrompt`, and `sessionElevationEnabled` to the target Agent's AuthorizationRole, and tests live `aliyun --mode OIDC`, Tencent Cloud `AssumeRoleWithWebIdentity`, or `kubectl auth can-i` behavior with both the ordinary and elevated tokens returned by the Role API.
 
 ### 4. Use the target Agent in Nia Teams GroupChat
 
@@ -114,7 +118,7 @@ All supported platforms use standard OIDC metadata: Issuer `https://nia-teams.co
 
 - **Alibaba Cloud RAM OIDC** (Reference: [aliyun.md](./references/aliyun.md) · Official docs: [Role-based OIDC SSO](https://www.alibabacloud.com/help/en/ram/overview-of-oidc-based-sso), [`AssumeRoleWithOIDC`](https://www.alibabacloud.com/help/en/ram/developer-reference/api-sts-2015-04-01-assumerolewithoidc)): Provider `NiaTeamsWorkload` (managed via `aliyun ims`); IssuerUrl and ClientIds use the values above. Fingerprints contain the comma-separated SHA-1 fingerprints of the full TLS certificate chain (leaf, intermediate CA, and root CA). Role Trust Policy Action: `sts:AssumeRole`; Federated Principal: `acs:ram::<accountId>:oidc-provider/NiaTeamsWorkload`. Match `oidc:iss`, `oidc:aud` and `oidc:sub` exactly. Ordinary-tier `oidc:sub` accepts `role:agent.ops-agent.aliyun` and `role:agent.ops-agent.aliyun:elevated`; elevated-tier trust accepts only the latter. Verified with Alibaba Cloud CLI `3.5.2` and `3.4.11`.
 - **Kubernetes OIDC RBAC** (Reference: [kubernetes.md](./references/kubernetes.md) · Official docs: [OpenID Connect Tokens](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#openid-connect-tokens)): API server settings: issuer and client ID above, `username-claim=sub`, `groups-claim=groups`, empty groups prefix (`username-prefix=-` optional when using Group bindings). Group bindings (recommended) bind `role:agent.ops-agent.k8s-prod` for ordinary permissions and `nia:elevated:role:agent.ops-agent.k8s-prod` for elevated permissions; User bindings accept ordinary and elevated Subjects for ordinary permissions and only the elevated Subject for elevated permissions. RoleBindings limit namespace scope; ClusterRoleBindings are cluster-wide. Managed clusters must support this OIDC authentication configuration. Verified with `kubectl v1.32.2` against ACK Kubernetes `v1.35.2-aliyun.1`.
-- **Tencent Cloud CAM OIDC**: Coming soon.
+- **Tencent Cloud CAM OIDC** (Reference: [tencentcloud.md](./references/tencentcloud.md) · Official docs: [OIDC role-based SSO](https://www.tencentcloud.com/document/product/598/58323), [`CreateOIDCConfig`](https://www.tencentcloud.com/document/product/598/47115), [`AssumeRoleWithWebIdentity`](https://www.tencentcloud.com/document/product/1150/49454)): Inspect and reuse an existing `NiaTeamsWorkload` provider via `tccli cam DescribeOIDCConfig` first (on a new account, verify `CreateOIDCConfig` with the single-line Base64 of the complete JWKS JSON and `AutoRotateKey=1`). Role Trust Policy `action`: `name/sts:AssumeRoleWithWebIdentity`; Federated Principal: `qcs::cam::uin/<UIN>:oidc-provider/NiaTeamsWorkload`. Match `oidc:iss`, `oidc:aud`, and `oidc:sub` exactly (ordinary-tier trust accepts both ordinary and `:elevated` subjects; elevated-tier trust accepts only `:elevated`). Scope custom policies with six-segment resource QCS short region codes (e.g. `qcs::cvm:bj:uin/<UIN>:instance/*`), verify STS `GetCallerIdentity` against the numeric `RoleId`, and exchange tokens + sign API requests in memory via `TC3-HMAC-SHA256` using the Python 3 standard library. Verified with `tccli 3.1.197.1` and `Python 3.9.6` (reusing an existing provider for full two-tier role provisioning, policy scoping, and positive/negative STS exchange checks; creating a new provider via `CreateOIDCConfig` was not live-tested in this run—verify its parameters on new accounts first).
 
 ## 5. Token Structure & Permission Boundaries
 
