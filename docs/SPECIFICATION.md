@@ -230,7 +230,7 @@ Deletes the Nia Teams role and its binding to the Agent:
 ```
 
 Conflicting bindings are forbidden. References from active grants or routines can block deletion with
-409. Deletion does not remove external IAM/RBAC objects or revoke already-issued cloud sessions.
+409. Running sandboxes sweep standing role token files on the next lifecycle reconciliation (observed ~15–20 seconds in live tests; deployment-configurable, with a 60-second server default). Deletion does not remove external IAM/RBAC objects or revoke already-issued cloud sessions. For emergency cutoff, remove cloud trust / Kubernetes RoleBindings immediately and separately revoke or deny outstanding STS sessions.
 Existing sandboxes may require a role refresh to observe binding changes.
 
 ### Failures and credential transport

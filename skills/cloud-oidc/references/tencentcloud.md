@@ -2,7 +2,7 @@
 
 Use Bash, `jq`, `curl`, OpenSSL, and a current `tccli` (`>= 3.1.197`) in the administrator environment.
 Administrator credentials remain on the local machine. Confirm the active CLI profile and root account UIN via `tccli sts GetCallerIdentity` before writes; UIN is not APPID.
-Target Agent sandbox commands below require only `python3` (standard library `urllib`, `hashlib`, `hmac`) and `nia`—neither `tccli` nor `tencentcloud-sdk-python` needs to be preinstalled inside the target Agent sandbox.
+Nia Teams sandboxes preinstall `tccli`, `aliyun`, and `kubectl`; target Agent commands use `nia` and the `tccli` OIDC credential provider, not administrator CLI credentials.
 Examples use approved values in variables; substitute all `<...>` fields before execution.
 
 ## Provider inspection and creation
@@ -84,59 +84,52 @@ tccli cam GetRole --RoleName "$ELEVATED_ROLE" --region ap-beijing
 tccli cam ListAttachedRolePolicies --RoleName "$ELEVATED_ROLE" --Page 1 --Rp 200 --region ap-beijing
 ```
 
-## Sandbox commands & zero-dependency TC3 signing
+## Sandbox commands & tccli OIDC authentication
 
-- `sts.tencentcloudapi.com` `AssumeRoleWithWebIdentity` (`X-TC-Version: 2018-08-13`) uses header `Authorization: SKIP` and takes `RoleArn` in role-name form: `qcs::cam::uin/<UIN>:roleName/<RoleName>`.
-- **Assumed-role ARN pitfall**: `sts GetCallerIdentity` returns `Arn` using the **numeric `RoleId`**, not `RoleName` (`qcs::sts:<UIN>:assumed-role/<RoleId>` or `.../<RoleId>/<RoleSessionName>`). Always match `RoleId` from `cam GetRole` when asserting caller identity.
-- Subsequent Tencent Cloud API 3.0 calls sign requests with `TC3-HMAC-SHA256` using the temporary `TmpSecretId`, `TmpSecretKey`, and header `X-TC-Token: <Token>` in Python 3 standard library—keeping credentials strictly in process memory.
+`tccli` uses `TKE_REGION`, `TKE_PROVIDER_ID`, `TKE_ROLE_ARN`, and
+`TKE_WEB_IDENTITY_TOKEN_FILE` to exchange the JWT via STS `AssumeRoleWithWebIdentity`
+and sign service requests. STS credentials stay strictly in the `tccli` process memory;
+do not export, print, or persist them, or use debug logging.
+
+Use a regular token file in `/dev/shm` (tmpfs RAM), private mode `0600`, generated with
+`nia role-token <roleKey>` for each command. The subshell templates below use `umask 077`,
+`mktemp`, and an exit trap to delete the JWT immediately when the command exits (also
+on handled HUP/INT/TERM). `/dev/shm` being `noexec` only prevents executing files there;
+it does not prevent the SDK from opening and reading a token data file. A SIGKILL cannot
+run cleanup; remove any orphaned private JWT file once the interrupted process is gone.
+
+- Do **not** use bash process substitution `<(nia role-token ...)`: it supplies a
+  one-shot `/dev/fd/*` pipe. `tencentcloud-sdk-python`'s `OIDCRoleArnCredential`
+  reads `TKE_WEB_IDENTITY_TOKEN_FILE` during initialization and again on credential
+  refresh (including the first exchange). Re-reading an exhausted pipe yields
+  `InvalidParameter.ParamError: id_token is empty`.
+- Do **not** point this variable directly at `/var/run/nia/mcp/token.<roleKey>`:
+  that standing file always holds the Tier 1 ordinary token (`sub: role:<roleKey>`).
+  During an approved elevation window, `nia role-token <roleKey>` instead selects
+  the `:elevated` token from in-memory `NIA_ELEVATED_ROLE_TOKENS`.
+- **Assumed-role ARN pitfall**: `sts GetCallerIdentity` returns the numeric `RoleId`,
+  not `RoleName` (`qcs::sts:<UIN>:assumed-role/<RoleId>` or
+  `.../<RoleId>/<RoleSessionName>`). Compare the exact ID from `cam GetRole`.
 
 ## Local live verification
 
-Use a private `0600` `role-response.json` containing the role PUT response (note that Nia Teams trims leading/trailing whitespace on `systemPrompt` and `elevationPrompt` when storing; compare `.strip()` on readback).
-Verify the 2×2 token exchange matrix and both positive/negative regional resource boundaries:
+On the **provisioning administrator workstation** (which already has `tccli` per prerequisites), use a private `0600` `role-response.json` containing the role PUT response (note that Nia Teams trims leading/trailing whitespace on `systemPrompt` and `elevationPrompt` when storing; compare `.strip()` on readback).
+The `TKE_*` variables select OIDC credentials rather than administrator CLI auth; do not pass profile credentials or explicit secret-key flags. This helper requires `/dev/shm` tmpfs on the verification host; on a non-Linux workstation use its approved private RAM-backed temporary directory instead. Verify the 2×2 token exchange matrix and both positive/negative regional resource boundaries:
 
 ```bash
 verify_cam() (
   set -eu; set +x
-  ROLE_ARN="$2" EXPECTED_ROLE_ID="$3" FIELD="$1" python3 -I - <<'PY'
-import datetime, hashlib, hmac, json, os, pathlib, time, urllib.error, urllib.request
-
-jwt = json.loads(pathlib.Path("role-response.json").read_text())["tokens"][os.environ["FIELD"]]
-req_body = json.dumps({
-    "ProviderId": "NiaTeamsWorkload", "WebIdentityToken": jwt,
-    "RoleArn": os.environ["ROLE_ARN"], "RoleSessionName": "nia-verification", "DurationSeconds": 900
-}, separators=(",", ":")).encode()
-req = urllib.request.Request("https://sts.tencentcloudapi.com", data=req_body, headers={
-    "Content-Type": "application/json; charset=utf-8", "Authorization": "SKIP",
-    "X-TC-Action": "AssumeRoleWithWebIdentity", "X-TC-Version": "2018-08-13",
-    "X-TC-Timestamp": str(int(time.time())), "X-TC-Region": "ap-beijing",
-}, method="POST")
-try:
-    sts = json.load(urllib.request.urlopen(req, timeout=30))["Response"]
-except urllib.error.HTTPError as exc:
-    raise SystemExit(f"HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')}") from None
-if "Error" in sts:
-    raise SystemExit(f"{sts['Error']['Code']}: {sts['Error']['Message']}")
-cred = sts["Credentials"]
-
-host, service, body = "sts.tencentcloudapi.com", "sts", b"{}"
-ts = str(int(time.time()))
-date = datetime.datetime.fromtimestamp(int(ts), datetime.timezone.utc).strftime("%Y-%m-%d")
-ct = "application/json; charset=utf-8"
-canon = f"POST\n/\n\ncontent-type:{ct}\nhost:{host}\n\ncontent-type;host\n{hashlib.sha256(body).hexdigest()}"
-scope = f"{date}/{service}/tc3_request"
-s2s = f"TC3-HMAC-SHA256\n{ts}\n{scope}\n{hashlib.sha256(canon.encode()).hexdigest()}"
-sign = lambda k, m: hmac.new(k, m.encode(), hashlib.sha256).digest()
-sig = hmac.new(sign(sign(sign(("TC3" + cred["TmpSecretKey"]).encode(), date), service), "tc3_request"), s2s.encode(), hashlib.sha256).hexdigest()
-id_req = urllib.request.Request(f"https://{host}", data=body, headers={
-    "Content-Type": ct, "Host": host, "X-TC-Action": "GetCallerIdentity", "X-TC-Version": "2018-08-13",
-    "X-TC-Timestamp": ts, "X-TC-Region": "ap-beijing", "X-TC-Token": cred["Token"],
-    "Authorization": f"TC3-HMAC-SHA256 Credential={cred['TmpSecretId']}/{scope}, SignedHeaders=content-type;host, Signature={sig}",
-}, method="POST")
-ident = json.load(urllib.request.urlopen(id_req, timeout=30))["Response"]
-assert ident["Type"] == "CAMRole" and f"assumed-role/{os.environ['EXPECTED_ROLE_ID']}" in ident["Arn"], ident
-print("Verified:", ident["AccountId"], ident["Arn"])
-PY
+  umask 077
+  T=$(mktemp /dev/shm/nia-oidc.XXXXXX)
+  trap 'rm -f "$T"' EXIT
+  trap 'exit 1' HUP INT TERM
+  jq -er --arg field "$1" '.tokens[$field] | select(type == "string" and length > 0)' \
+    role-response.json > "$T"
+  IDENTITY=$(TKE_REGION=ap-beijing TKE_PROVIDER_ID=NiaTeamsWorkload \
+    TKE_ROLE_ARN="$2" TKE_WEB_IDENTITY_TOKEN_FILE="$T" \
+    tccli sts GetCallerIdentity --region ap-beijing)
+  printf '%s\n' "$IDENTITY" | jq -e --arg roleId "$3" \
+    '.Type == "CAMRole" and ((.Arn | split("assumed-role/")[1] | split("/")[0]) == $roleId)'
 )
 # Ordinary tier enabled: expect success.
 verify_cam roleToken "$RESIDENT_ARN" "$RESIDENT_ROLE_ID"
@@ -160,52 +153,20 @@ Sources: [CAM OIDC Role SSO](https://www.tencentcloud.com/document/product/598/5
 
 ### Ordinary tier — systemPrompt
 
-`agent.ops-agent.tencent` 是腾讯云账号 UIN `100000000001` 的日常巡检身份，普通权限为只读 `ap-beijing` 的 CVM 实例列表（不依赖 `tccli`，仅用 Python 3 标准库与 `nia` 在内存中换取短期凭证并完成 TC3 签名）：
+`agent.ops-agent.tencent` 是腾讯云账号 UIN `100000000001` 的日常巡检身份，普通权限为只读 `ap-beijing` 的 CVM 实例列表。沙箱已预装 `tccli`；OIDC JWT 仅暂存于 `/dev/shm` 的 `0600` 文件，命令退出即删除，STS 凭证仅在 `tccli` 进程内存中使用：
 
 ```bash
-python3 -I - <<'PY'
-import datetime, hashlib, hmac, json, subprocess, time, urllib.error, urllib.request
-
-ROLE_ARN = "qcs::cam::uin/100000000001:roleName/acme-observer"
-REGION = "ap-beijing"
-token = subprocess.check_output(["nia", "role-token", "agent.ops-agent.tencent"], text=True, timeout=30).strip()
-
-def post(host, body, headers):
-    try:
-        with urllib.request.urlopen(urllib.request.Request(f"https://{host}", data=body, headers=headers, method="POST"), timeout=30) as r:
-            res = json.load(r)["Response"]
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')}") from None
-    if "Error" in res:
-        raise RuntimeError(f"{res['Error']['Code']}: {res['Error']['Message']}")
-    return res
-
-sts_body = json.dumps({"ProviderId": "NiaTeamsWorkload", "WebIdentityToken": token,
-                       "RoleArn": ROLE_ARN, "RoleSessionName": "ops-agent-cvm", "DurationSeconds": 900}, separators=(",", ":")).encode()
-cred = post("sts.tencentcloudapi.com", sts_body, {
-    "Content-Type": "application/json; charset=utf-8", "Authorization": "SKIP",
-    "X-TC-Action": "AssumeRoleWithWebIdentity", "X-TC-Version": "2018-08-13",
-    "X-TC-Timestamp": str(int(time.time())), "X-TC-Region": REGION,
-})["Credentials"]
-
-def tc3_call(service, action, version, region, payload):
-    host, ct = f"{service}.tencentcloudapi.com", "application/json; charset=utf-8"
-    body = json.dumps(payload, separators=(",", ":")).encode()
-    ts = str(int(time.time()))
-    date = datetime.datetime.fromtimestamp(int(ts), datetime.timezone.utc).strftime("%Y-%m-%d")
-    canon = f"POST\n/\n\ncontent-type:{ct}\nhost:{host}\n\ncontent-type;host\n{hashlib.sha256(body).hexdigest()}"
-    scope = f"{date}/{service}/tc3_request"
-    s2s = f"TC3-HMAC-SHA256\n{ts}\n{scope}\n{hashlib.sha256(canon.encode()).hexdigest()}"
-    sign = lambda k, m: hmac.new(k, m.encode(), hashlib.sha256).digest()
-    sig = hmac.new(sign(sign(sign(("TC3" + cred["TmpSecretKey"]).encode(), date), service), "tc3_request"), s2s.encode(), hashlib.sha256).hexdigest()
-    return post(host, body, {
-        "Content-Type": ct, "Host": host, "X-TC-Action": action, "X-TC-Version": version,
-        "X-TC-Timestamp": ts, "X-TC-Region": region, "X-TC-Token": cred["Token"],
-        "Authorization": f"TC3-HMAC-SHA256 Credential={cred['TmpSecretId']}/{scope}, SignedHeaders=content-type;host, Signature={sig}",
-    })
-
-print(json.dumps(tc3_call("cvm", "DescribeInstances", "2017-03-12", REGION, {"Limit": 10}), ensure_ascii=False, indent=2))
-PY
+(
+  umask 077
+  T=$(mktemp /dev/shm/nia-oidc.XXXXXX) || exit 1
+  trap 'rm -f "$T"' EXIT
+  trap 'exit 1' HUP INT TERM
+  nia role-token agent.ops-agent.tencent > "$T" || exit 1
+  TKE_REGION=ap-beijing TKE_PROVIDER_ID=NiaTeamsWorkload \
+    TKE_ROLE_ARN=qcs::cam::uin/100000000001:roleName/acme-observer \
+    TKE_WEB_IDENTITY_TOKEN_FILE="$T" \
+    tccli cvm DescribeInstances --region ap-beijing --Limit 10
+)
 ```
 
 （若同时启用提权权限，追加一句：）重启 `ap-beijing` 的 CVM 实例 `ins-00000001` 前，先说明目标对象、动作和副作用，再调用 `request_session_elevation`。
@@ -216,50 +177,18 @@ PY
 
 ### Elevated tier — elevationPrompt
 
-已批准重启腾讯云账号 UIN `100000000001` 在 `ap-beijing` 的 CVM 实例 `ins-00000001`。调用 `nia role-token agent.ops-agent.tencent` 获取提权身份并将 `ROLE_ARN` 设为 `qcs::cam::uin/100000000001:roleName/acme-operator`：
+已批准重启腾讯云账号 UIN `100000000001` 在 `ap-beijing` 的 CVM 实例 `ins-00000001`。通过 `nia role-token agent.ops-agent.tencent` 获取当前提权身份；JWT 文件退出即删除，STS 凭证不落盘：
 
 ```bash
-python3 -I - <<'PY'
-import datetime, hashlib, hmac, json, subprocess, time, urllib.error, urllib.request
-
-ROLE_ARN = "qcs::cam::uin/100000000001:roleName/acme-operator"
-REGION = "ap-beijing"
-token = subprocess.check_output(["nia", "role-token", "agent.ops-agent.tencent"], text=True, timeout=30).strip()
-
-def post(host, body, headers):
-    try:
-        with urllib.request.urlopen(urllib.request.Request(f"https://{host}", data=body, headers=headers, method="POST"), timeout=30) as r:
-            res = json.load(r)["Response"]
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')}") from None
-    if "Error" in res:
-        raise RuntimeError(f"{res['Error']['Code']}: {res['Error']['Message']}")
-    return res
-
-sts_body = json.dumps({"ProviderId": "NiaTeamsWorkload", "WebIdentityToken": token,
-                       "RoleArn": ROLE_ARN, "RoleSessionName": "ops-agent-cvm-reboot", "DurationSeconds": 900}, separators=(",", ":")).encode()
-cred = post("sts.tencentcloudapi.com", sts_body, {
-    "Content-Type": "application/json; charset=utf-8", "Authorization": "SKIP",
-    "X-TC-Action": "AssumeRoleWithWebIdentity", "X-TC-Version": "2018-08-13",
-    "X-TC-Timestamp": str(int(time.time())), "X-TC-Region": REGION,
-})["Credentials"]
-
-def tc3_call(service, action, version, region, payload):
-    host, ct = f"{service}.tencentcloudapi.com", "application/json; charset=utf-8"
-    body = json.dumps(payload, separators=(",", ":")).encode()
-    ts = str(int(time.time()))
-    date = datetime.datetime.fromtimestamp(int(ts), datetime.timezone.utc).strftime("%Y-%m-%d")
-    canon = f"POST\n/\n\ncontent-type:{ct}\nhost:{host}\n\ncontent-type;host\n{hashlib.sha256(body).hexdigest()}"
-    scope = f"{date}/{service}/tc3_request"
-    s2s = f"TC3-HMAC-SHA256\n{ts}\n{scope}\n{hashlib.sha256(canon.encode()).hexdigest()}"
-    sign = lambda k, m: hmac.new(k, m.encode(), hashlib.sha256).digest()
-    sig = hmac.new(sign(sign(sign(("TC3" + cred["TmpSecretKey"]).encode(), date), service), "tc3_request"), s2s.encode(), hashlib.sha256).hexdigest()
-    return post(host, body, {
-        "Content-Type": ct, "Host": host, "X-TC-Action": action, "X-TC-Version": version,
-        "X-TC-Timestamp": ts, "X-TC-Region": region, "X-TC-Token": cred["Token"],
-        "Authorization": f"TC3-HMAC-SHA256 Credential={cred['TmpSecretId']}/{scope}, SignedHeaders=content-type;host, Signature={sig}",
-    })
-
-print(json.dumps(tc3_call("cvm", "RebootInstances", "2017-03-12", REGION, {"InstanceIds": ["ins-00000001"]}), ensure_ascii=False, indent=2))
-PY
+(
+  umask 077
+  T=$(mktemp /dev/shm/nia-oidc.XXXXXX) || exit 1
+  trap 'rm -f "$T"' EXIT
+  trap 'exit 1' HUP INT TERM
+  nia role-token agent.ops-agent.tencent > "$T" || exit 1
+  TKE_REGION=ap-beijing TKE_PROVIDER_ID=NiaTeamsWorkload \
+    TKE_ROLE_ARN=qcs::cam::uin/100000000001:roleName/acme-operator \
+    TKE_WEB_IDENTITY_TOKEN_FILE="$T" \
+    tccli cvm RebootInstances --region ap-beijing --InstanceIds '["ins-00000001"]'
+)
 ```

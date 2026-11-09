@@ -67,7 +67,7 @@ Inspect CLI identity, existing OIDC providers (reuse `NiaTeamsWorkload` when alr
 Confirm target objects, policy changes and side effects with the human, then provision the reviewed plan.
 Read back changed objects and attached policies; reconcile existing grants when updating tiers.
 Use `tokens.roleToken` and `tokens.elevatedRoleToken` from PUT for live checks, isolated from admin CLI auth.
-Alibaba: `aliyun sts GetCallerIdentity --mode OIDC`; Tencent: `sts AssumeRoleWithWebIdentity` + TC3 `GetCallerIdentity` (matching numeric `RoleId`);
+Alibaba: `aliyun sts GetCallerIdentity --mode OIDC`; Tencent: `tccli sts GetCallerIdentity` with `TKE_*` OIDC env vars (matching numeric `RoleId`);
 Kubernetes: `kubectl auth can-i` with explicit server, CA and token.
 Verify enabled tiers: ordinary token succeeds on Tier 1 and is denied on Tier 2;
 elevated token succeeds on Tier 2 (and retains Tier 1 when both are enabled).

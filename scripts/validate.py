@@ -160,17 +160,68 @@ for platform in ('aliyun', 'tencentcloud'):
         assert condition['oidc:aud'] == 'nia-teams-workload'
     counts['trust'] += 1
 
+# Exercise the documented helper itself with a local tccli stub, never cloud auth.
+tencent = (skill_root / 'references/tencentcloud.md').read_text()
+verification = next(b for lang, b in re.findall(r'^```(\w+)\n(.*?)^```', tencent, re.M | re.S)
+                    if lang == 'bash' and b.startswith('verify_cam() ('))
+helper = verification.split('\n# Ordinary tier enabled:', 1)[0]
+assert 'mktemp /dev/shm/nia-oidc.XXXXXX' in helper
+with tempfile.TemporaryDirectory() as tmp:
+    directory = Path(tmp)
+    (directory / 'role-response.json').write_text(json.dumps({
+        'tokens': {'roleToken': 'ordinary-test-jwt', 'elevatedRoleToken': 'elevated-test-jwt'}
+    }))
+    stub = r'''
+mktemp() { command mktemp "$PWD/token.XXXXXX"; }
+tccli() {
+  printf '%s' "$TKE_WEB_IDENTITY_TOKEN_FILE" > token-path
+  [[ "$*" == 'sts GetCallerIdentity --region ap-beijing' ]] || return 90
+  [[ "$TKE_REGION" == ap-beijing && "$TKE_PROVIDER_ID" == NiaTeamsWorkload ]] || return 91
+  [[ $(stat -c %a "$TKE_WEB_IDENTITY_TOKEN_FILE") == 600 ]] || return 92
+  local jwt again
+  jwt=$(cat "$TKE_WEB_IDENTITY_TOKEN_FILE")
+  again=$(cat "$TKE_WEB_IDENTITY_TOKEN_FILE")
+  [[ "$jwt" == "$again" && "$jwt" == "$EXPECTED_JWT" ]] || return 93
+  [[ "$TKE_ROLE_ARN" == "$EXPECTED_ARN" ]] || return 94
+  [[ "$MOCK_FAILURE" == 0 ]] || return 95
+  printf '%s\n' "$MOCK_IDENTITY"
+}
+'''
+    cases = [
+        ('ordinary', 'roleToken', '12345', 'CAMRole', '12345', '', False, True),
+        ('elevated-session', 'elevatedRoleToken', '12345', 'CAMRole', '12345', '/session', False, True),
+        ('wrong-id', 'roleToken', '12345', 'CAMRole', '123456', '', False, False),
+        ('wrong-type', 'roleToken', '12345', 'User', '12345', '', False, False),
+        ('exchange-denied', 'roleToken', '12345', 'CAMRole', '12345', '', True, False),
+        ('missing-token', 'missing', '12345', 'CAMRole', '12345', '', False, False),
+    ]
+    for name, field, expected_id, identity_type, actual_id, suffix, failure, success in cases:
+        identity = json.dumps({'Type': identity_type,
+                               'Arn': f'qcs::sts:100000000001:assumed-role/{actual_id}{suffix}'})
+        env = dict(EXPECTED_JWT=('elevated-test-jwt' if field == 'elevatedRoleToken' else 'ordinary-test-jwt'),
+                   EXPECTED_ARN='qcs::cam::uin/100000000001:roleName/test',
+                   MOCK_FAILURE=str(int(failure)), MOCK_IDENTITY=identity)
+        # Pass mock data as positional arguments to avoid interpolating shell source.
+        setup = '\n'.join(f'export {key}="${index}"' for index, key in enumerate(env, 1))
+        result = subprocess.run(['bash', '-c', stub + setup + '\n' + helper +
+                                 f'\nverify_cam {field} "$EXPECTED_ARN" {expected_id}',
+                                 'verify-cam-test', *env.values()], cwd=tmp, text=True, capture_output=True)
+        expected_status = 0 if success else (95 if failure else (4 if field == 'missing' else 1))
+        assert result.returncode == expected_status, f'verify_cam {name}: status={result.returncode}: {result.stderr}'
+        assert not list(directory.glob('token.*')), f'verify_cam {name}: token not cleaned up'
+    print(f'verify_cam: {len(cases)} local behavior checks passed')
+
 for path in (skill_root / 'references').glob('*.md'):
     text = path.read_text()
     for section in ('Ordinary tier — systemPrompt', 'Elevated tier only — systemPrompt'):
         prompt = text.split('### ' + section, 1)[1].split('\n### ', 1)[0]
         assert 'acme-operator' not in prompt, f'Elevated ARN in resident prompt: {path}'
     templates = text.split('## Role prompt templates', 1)[1]
-    disallowed = ['set -eu', 'set +x', 'umask', 'mktemp', 'trap ',
+    disallowed = ['set -eu', 'set +x',
                   'GetCallerIdentity', 'auth can-i',
                   'newly launched shell', '新启动的 shell']
     if path.stem != 'tencentcloud':
-        disallowed.append('AssumeRoleWithWebIdentity')
+        disallowed.extend(['AssumeRoleWithWebIdentity', 'umask', 'mktemp', 'trap '])
     for boilerplate in disallowed:
         assert boilerplate not in templates, f'Role prompt noise: {path}: {boilerplate}'
     assert 'request_session_elevation' in templates
@@ -178,7 +229,11 @@ for path in (skill_root / 'references').glob('*.md'):
         assert 'sls GetLogs' in templates and 'sae RestartApplication' in templates
     elif path.stem == 'tencentcloud':
         assert 'DescribeInstances' in templates and 'RebootInstances' in templates
-        assert 'TC3-HMAC-SHA256' in templates
+        assert 'TC3-HMAC-SHA256' not in templates
+        for requirement in ('tccli cvm', 'TKE_REGION', 'TKE_PROVIDER_ID', 'TKE_ROLE_ARN',
+                            'TKE_WEB_IDENTITY_TOKEN_FILE', 'mktemp /dev/shm/nia-oidc.XXXXXX',
+                            'umask 077', 'trap \'rm -f \"$T\"\' EXIT'):
+            assert templates.count(requirement) == 2, f'Missing private OIDC lifecycle: {requirement}'
     else:
         assert 'get pods,deployments' in templates and 'logs deployment/payments-api' in templates
         assert 'rollout restart deployment/payments-api' in templates

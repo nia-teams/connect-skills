@@ -160,6 +160,14 @@ the target Agent's sandbox directly, fetch the public cluster CA PEM (for exampl
 `kube-public/kube-root-ca.crt` when local kubeconfig omits `certificate-authority-data`) and embed it
 inside the role prompt (`cat > /tmp/acme-ca.crt <<'EOF' ... EOF`), passing
 `--certificate-authority=/tmp/acme-ca.crt`.
+When the administrator's local kubeconfig uses `insecure-skip-tls-verify: true`,
+an external CA file, or omits inline CA data, extract `<CLUSTER_CA_PEM>` with:
+
+```bash
+kubectl get configmap kube-root-ca.crt -n kube-public -o jsonpath='{.data.ca\.crt}'
+```
+
+Verify that this CA belongs to the approved API endpoint; do not copy insecure TLS settings.
 `--kubeconfig=/dev/null` isolates calls from ambient kubeconfig state. The command form below refreshes
 the token per invocation; an exec-credential kubeconfig is an alternative only with a correctly
 implemented ExecCredential plugin wrapping `nia role-token` (raw JWT output is not ExecCredential JSON).
