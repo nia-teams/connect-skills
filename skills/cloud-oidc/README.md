@@ -73,7 +73,7 @@ On top of the standard OIDC protocol, **Nia Teams defines its own two-tier privi
 
 Enable either tier on its own, or combine both tiers together:
 - **Ordinary permissions only**: set `sessionElevationEnabled: false` and `elevationPrompt: ""`, provisioning only the standing cloud role (for pure read-only observability Agents).
-- **Elevated permissions only**: set `sessionElevationEnabled: true`, state the gated operational scope in `systemPrompt` with zero standing cloud access, and provision only the `:elevated`-trusted cloud role (every cloud action requires TaskBar card approval).
+- **Elevated permissions only**: set `sessionElevationEnabled: true`, state the gated operational scope in `systemPrompt` with zero standing cloud access, and provision only the `:elevated`-trusted cloud role (every cloud action requires TaskBar card approval); two roles are not required when elevated permissions (such as `AdministratorAccess` or `cluster-admin`) cover the needed access—grant no permissions before approval and create only the elevated role.
 - **Ordinary + Elevated permissions together**: routine diagnostics run frictionlessly under Tier 1 ordinary permissions, while production mutations unlock Tier 2 elevated permissions via TaskBar approval.
 
 ## 3. Quick Start — Four-Step Workflow
@@ -81,6 +81,8 @@ Enable either tier on its own, or combine both tiers together:
 ### 1. In the environment holding cloud administrator permissions, install the skill and describe the target permissions
 
 > **Important—run in the administrator environment, not in the target Agent**: Execute this setup **in the environment that holds cloud or cluster administrator permissions** (such as a workstation or ops terminal authenticated with administrator `aliyun` CLI, `tccli`, or `kubectl`), **not inside the target Nia Teams Agent being authorized**.
+
+If your local administrator `aliyun` CLI is not configured, create a temporary AK/SK with `AdministratorAccess` in the [RAM console](https://ram.console.aliyun.com/users) and give it to your local Agent (such as Codex / Claude Code) for setup; disable or delete the temporary AK (and any temporary RAM user created for it) after OIDC setup and live verification in step 3.
 
 In your administrator `aliyun` CLI, `tccli`, or `kubectl` environment, run the install command from the top of this page and tell the Agent running in **that same environment** (Claude Code, Codex, Pi, etc.) which Nia Teams Agent to authorize and what ordinary and/or elevated permissions to grant. These examples use fictional deployment values:
 

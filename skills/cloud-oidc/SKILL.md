@@ -11,13 +11,13 @@ Run this skill in the environment holding cloud/cluster administrator CLI creden
 
 ## Scope & References
 
-Execute from an authenticated administrator `aliyun` CLI, `tccli`, or `kubectl` environment.
+Execute from an authenticated administrator `aliyun` CLI, `tccli`, or `kubectl` environment; if local administrator `aliyun` credentials are absent, guide the user to create a temporary AK/SK with `AdministratorAccess` at https://ram.console.aliyun.com/users and give it to the current local Agent for setup.
 Administrator credentials stay in the provisioning environment; Nia Teams stores AuthorizationRole instructions.
 Installed resources resolve relative to this file:
 - Alibaba Cloud RAM: [references/aliyun.md](references/aliyun.md).
 - Tencent Cloud CAM: [references/tencentcloud.md](references/tencentcloud.md).
 - Kubernetes OIDC RBAC: [references/kubernetes.md](references/kubernetes.md).
-Confirm account/UIN/cluster, region/namespace, ordinary permission scope, elevated permission scope, and role name.
+Confirm account/UIN/cluster, region/namespace, enabled permission scope(s), and role name; request only the tiers needed.
 The suffix `name` matches `/^[a-z0-9][a-z0-9-]{0,31}$/`; cloud role names are separate objects.
 
 ## Agent Pairing & Authorization-Role API
@@ -49,6 +49,7 @@ Standard OIDC Issuer: `https://nia-teams.com`; audience: `nia-teams-workload`; R
 - **Tier 1 (Ordinary permissions)**: IAM trust accepts `role:<ROLE_KEY>` and `role:<ROLE_KEY>:elevated`; Kubernetes Group binding uses `role:<ROLE_KEY>`.
 - **Tier 2 (Elevated permissions)**: IAM trust accepts only `role:<ROLE_KEY>:elevated`; Kubernetes Group binding uses `nia:elevated:role:<ROLE_KEY>` (elevated tokens retain the ordinary group).
 Enable Tier 1 alone (`sessionElevationEnabled: false`, `elevationPrompt: ""`), Tier 2 alone (`sessionElevationEnabled: true`, zero standing cloud access), or both tiers together (`sessionElevationEnabled: true`).
+When elevated access (such as `AdministratorAccess` or `cluster-admin`) covers the needed permissions and no standing access is needed, grant no permissions before approval and create only the elevated role, not two roles.
 Human owner/admin membership gates pairing, role configuration and TaskBar elevation approval;
 cloud IAM / Kubernetes RBAC enforces workload access independently.
 
@@ -74,4 +75,5 @@ elevated token succeeds on Tier 2 (and retains Tier 1 when both are enabled).
 Use non-mutating permission probes and check an out-of-scope resource as well as allowed resources.
 Report actual test results, provisioned objects and any unavailable live checks.
 Keep tokens and STS credentials in memory or private temporary files.
+After Alibaba OIDC live verification, clear temporary local bootstrap credentials and prompt the user to disable/delete the temporary AK (and any temporary RAM user created for it) in RAM; keep AK/SK out of remote Nia Teams chats/sandboxes, target Agent prompts/configuration, command arguments, logs and summaries.
 Revocation reconciles external trust/bindings and outstanding STS sessions as well as the Nia Teams role.

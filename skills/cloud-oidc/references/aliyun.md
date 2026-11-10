@@ -5,6 +5,8 @@ Administrator credentials remain on the local machine. Confirm the account and p
 Every `aliyun` command in OIDC mode requires `--region` (even for global services such as `ram` and `ims`) and `--role-session-name` (2–64 characters).
 Examples use approved values in shell variables; substitute all `<...>` fields before execution.
 
+If local administrator `aliyun` credentials are absent, guide the user to create a temporary AK/SK with `AdministratorAccess` at https://ram.console.aliyun.com/users and give it to the local Agent. Use `ALIBABA_CLOUD_ACCESS_KEY_ID` / `ALIBABA_CLOUD_ACCESS_KEY_SECRET` environment variables or a `0600` temporary configuration via `--config-path`; omit `--mode AK` for environment-only authentication (tested with CLI `3.4.11`). Keep AK/SK out of remote Nia Teams sandboxes, target Agent prompts/configuration, command arguments, logs and summaries. After `verify_ram` live verification, clear temporary local credentials and prompt the user to disable/delete the temporary AK (and any temporary RAM user created for it) in RAM.
+
 ## Provider inspection and creation
 
 Alibaba Cloud CLI places OIDC IdP operations under the `ims` product (`aliyun ims ...`), while the underlying RAM authorization actions remain `ram:*OIDCProvider`.
@@ -51,7 +53,7 @@ jq --arg sub "role:${ROLE_KEY}:elevated" \
 ```
 
 Ordinary-tier `oidc:sub` is an array of the two exact subjects (so elevated sessions retain ordinary access). Elevated-tier `oidc:sub` is only the elevated string.
-Provision the ordinary role, the elevated role, or both according to the enabled permission tiers:
+Provision the ordinary role, the elevated role, or both according to the enabled permission tiers. For elevated-only access (such as `AdministratorAccess` covering the needed permissions), grant no permissions before approval and create only `$ELEVATED_ROLE`:
 
 ```bash
 aliyun ram CreateRole --RoleName "$RESIDENT_ROLE" \
@@ -105,7 +107,7 @@ verify_ram elevatedRoleToken "$ELEVATED_ARN"
 verify_ram elevatedRoleToken "$RESIDENT_ARN"
 ```
 
-Run the calls applicable to the enabled tier(s). Inspect returned account and assumed role identity.
+Run the calls applicable to the enabled tier(s). For elevated-only access, run only the two `$ELEVATED_ARN` checks: ordinary Token denied, elevated Token accepted. Inspect returned account and assumed role identity.
 Review effective resource permissions separately; GetCallerIdentity only demonstrates token exchange.
 Clean up the private response after verification. Removing RAM policies/trust blocks future assumptions;
 review already-issued STS sessions separately.

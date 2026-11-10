@@ -12,6 +12,8 @@
 npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
 ```
 
+若本地终端尚未配置阿里云管理员凭证，可在阿里云 [RAM 控制台](https://ram.console.aliyun.com/users) 创建带 `AdministratorAccess` 权限的临时 AK/SK，交给本地 Agent（如 Codex / Claude Code）完成配置，并在 OIDC 配置与实测完成后禁用或删除该临时 AK（及本次新建的临时 RAM 用户）。
+
 ## Skills 目录
 
 | Skill | 用途说明 | 安装命令 | 说明文档 |

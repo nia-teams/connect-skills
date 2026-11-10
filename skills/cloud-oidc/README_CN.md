@@ -73,7 +73,7 @@ npx skills add nia-teams/connect-skills --skill cloud-oidc
 
 按实际业务需要单独启用其中一级，或两级同时组合使用：
 - **只配普通权限**：设 `sessionElevationEnabled: false`、`elevationPrompt: ""`，云侧只建常驻角色（纯只读巡检 Agent）。
-- **只配提权权限**：设 `sessionElevationEnabled: true`，`systemPrompt` 仅声明受控操作范围与提权要求，云侧只建信任 `:elevated` 的角色（日常零常驻云权限，每次操作前点卡审批）。
+- **只配提权权限**：设 `sessionElevationEnabled: true`，`systemPrompt` 仅声明受控操作范围与提权要求，云侧只建信任 `:elevated` 的角色（日常零常驻云权限，每次操作前点卡审批）；不必每次建立两个角色，当提权权限（如 `AdministratorAccess`、`cluster-admin`）已覆盖所需权限时，提权前不配任何权限，只建这一个提权角色。
 - **普通权限 + 提权权限同时启用**：日常查日志走普通权限免打扰，生产变更走 TaskBar 点卡解锁提权权限。
 
 ## 三、快速接入（四步完成配置与端到端验证）
@@ -81,6 +81,8 @@ npx skills add nia-teams/connect-skills --skill cloud-oidc
 ### 1. 在持有云管理员权限的环境中安装 Skill 并向当前 Agent 描述接入目标
 
 > **注意执行位置**：本配置流程**在持有云 / 集群管理员权限的环境里执行**（例如已登录管理员 `aliyun` CLI、`tccli` 或 `kubectl` 的工作台或运维终端），**不是在被授权的目标 Nia Teams Agent 沙箱里执行**。
+
+若本地尚未配置阿里云管理员 `aliyun` CLI，可在阿里云 [RAM 控制台](https://ram.console.aliyun.com/users) 创建带 `AdministratorAccess` 权限的临时 AK/SK，交给本地 Agent（如 Codex / Claude Code）配置，并在第 3 步 OIDC 配置与实测完成后禁用或删除该临时 AK（及本次新建的临时 RAM 用户）。
 
 在你持有管理员 `aliyun` CLI、`tccli` 或 `kubectl` 凭证的环境中运行首屏安装命令，直接向运行在**这同一个管理员环境中**的 Agent（Claude Code、Codex、Pi 等）描述要给哪个 Nia Teams Agent 授予哪一级权限。以下为虚构配置示例：
 

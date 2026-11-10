@@ -12,6 +12,8 @@ Run the install command **in the environment that already holds cloud or cluster
 npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
 ```
 
+If your local terminal has no Alibaba Cloud administrator credentials, create a temporary AK/SK with `AdministratorAccess` in the [RAM console](https://ram.console.aliyun.com/users), give it to your local Agent (such as Codex / Claude Code) for setup, and disable or delete the temporary AK (and any temporary RAM user created for it) after OIDC setup and live verification.
+
 ## Available Skills
 
 | Skill | Description | Install Command | Documentation |
