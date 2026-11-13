@@ -4,3 +4,6 @@ role-response.json
 role-request.json
 *.credential
 .nia-oidc*/
+node_modules/
+dist/
+*.tgz

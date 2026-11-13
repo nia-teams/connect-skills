@@ -1,31 +1,33 @@
 # Nia Teams Connect Skills
 
-将 [Nia Teams](https://nia-teams.com) Agent 接入外部云基础设施、集群权限与开发工具的官方 Agent Skills 集合。
+将 [Nia Teams](https://nia-teams.com) 云端 Agent 接入云基础设施、集群与外部应用。
 
-[English](./README.md) | 简体中文
-
-## 快速安装
-
-**在持有云或集群管理员权限的执行环境中**（例如你登着管理员 `aliyun` CLI、`tccli` 或 `kubectl` 的电脑终端或运维环境——**不要在被授权的目标 Agent 沙箱内执行**），安装指定 Skill：
+[English](./README.md)
 
 ```sh
 npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
 ```
 
-若本地终端尚未配置阿里云管理员凭证，可在阿里云 [RAM 控制台](https://ram.console.aliyun.com/users) 创建带 `AdministratorAccess` 权限的临时 AK/SK，交给本地 Agent（如 Codex / Claude Code）完成配置，并在 OIDC 配置与实测完成后禁用或删除该临时 AK（及本次新建的临时 RAM 用户）。
+编程助手安装后加载 `skills/<name>/SKILL.md`；npm 包内路径为 `node_modules/@nia-teams/routine-webhook/skills/routine-webhook/SKILL.md`。
 
-## Skills 目录
+## 技能目录
 
-| Skill | 用途说明 | 安装命令 | 说明文档 |
-| --- | --- | --- | --- |
-| [`cloud-oidc`](./skills/cloud-oidc/) | 基于零信任架构（[NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)）与开放标准 OIDC 协议，将 Nia Teams Agent 接入阿里云 RAM、腾讯云 CAM 或 Kubernetes RBAC，支持**普通权限**与**提权权限**两级隔离。 | `npx skills add nia-teams/connect-skills --skill cloud-oidc` | [简体中文](./skills/cloud-oidc/README_CN.md) · [English](./skills/cloud-oidc/README.md) · [`SKILL.md`](./skills/cloud-oidc/SKILL.md) |
+| 技能 | 用途 | 说明文档 |
+| --- | --- | --- |
+| [`cloud-oidc`](./skills/cloud-oidc/) | 通过 OIDC 为 Agent 提供零信任云与集群访问，支持阿里云、腾讯云和 Kubernetes，区分普通权限与人工批准的提权权限。 | [中文](./skills/cloud-oidc/README_CN.md) · [英文](./skills/cloud-oidc/README.md) · [助手指引](./skills/cloud-oidc/SKILL.md) |
+| [`routine-webhook`](./skills/routine-webhook/) · [`@nia-teams/routine-webhook`](./packages/routine-webhook/) (命令行工具与 TypeScript SDK) | 外部脚本、后端服务或本地编程助手按 `topicKey` 调用 Nia Teams 云端 Agent，通过 WebSocket 或 HTTPS 回调接收经过验证的 `routine.reply` 事件（Node.js 20+）。 | [中文](./packages/routine-webhook/README_CN.md) · [英文](./packages/routine-webhook/README.md) · [助手指引](./skills/routine-webhook/SKILL.md) |
 
-## 仓库目录结构
+## 执行环境
 
-[`skills/<skill-name>/`](./skills/) 下的每个 Skill 拥有独立的人类说明文档与自包含的 AI 指令树：
+- **cloud-oidc** 在持有云或集群管理员凭证的环境中运行，使用 `aliyun`、`tccli` 或 `kubectl`。管理员凭证留在本地，配置与实测结束后移除临时管理员凭证。
+- **routine-webhook** 在外部脚本、服务或本地编程助手环境中运行，需要 Node.js 20+。SDK 与命令行工具发布为 [`@nia-teams/routine-webhook`](./packages/routine-webhook/)，安装命令为 `npm install @nia-teams/routine-webhook`。
+- 两项技能均不在被连接的目标 Nia Teams 云端 Agent 沙箱内运行。浏览器配对需由该 Agent 的人类 owner 或 admin 确认。
 
-- `skills/<skill-name>/README_CN.md` 与 `README.md` —— 面向工程师的架构原理、接入步骤与权限边界指南（对外介绍单个 Skill 时可直接分享 `skills/<skill-name>` 二级链接）。
-- `skills/<skill-name>/SKILL.md` 与 `references/` —— 由 `npx skills add` 安装供配置侧 Agent 加载的自包含执行指令。
-- [`docs/SPECIFICATION.md`](./docs/SPECIFICATION.md) —— 平台共享的 HTTP API、Agent Connect 配对与 Workload OIDC JWT 协议规范。
+## 仓库结构
+
+- `skills/`：由 `npx skills add` 安装的自包含助手指引。
+- [`packages/routine-webhook/`](./packages/routine-webhook/)：npm SDK、命令行工具、示例与工程师文档。
+- [协议规范](./docs/SPECIFICATION.md)：共享配对、Workload OIDC、授权角色与 Routine 协议。
+- [维护说明](./AGENTS.md)：验证命令与修改边界。
 
 [MIT](./LICENSE) © Nia Teams

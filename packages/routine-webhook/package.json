@@ -1,0 +1,58 @@
+{
+  "name": "@nia-teams/routine-webhook",
+  "version": "0.1.0",
+  "description": "Invoke Nia Teams Routine topics and receive authenticated replies from scripts and local agents.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Nia Teams",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nia-teams/connect-skills.git",
+    "directory": "packages/routine-webhook"
+  },
+  "homepage": "https://github.com/nia-teams/connect-skills/tree/main/packages/routine-webhook#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "nia-routine-webhook": "bin/nia-routine-webhook.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "skills",
+    "docs",
+    "examples",
+    "README.md",
+    "README_CN.md",
+    "LICENSE",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "npm run build && tsc --noEmit && tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext examples/*.ts",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}

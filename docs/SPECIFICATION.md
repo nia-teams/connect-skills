@@ -1,6 +1,6 @@
-# Nia Teams Workload OIDC connection specification
+# Nia Teams Connect specification
 
-This contract covers the connection boundary for Alibaba Cloud RAM OIDC, Tencent Cloud CAM OIDC, and Kubernetes OIDC RBAC.
+This contract covers cloud and cluster OIDC access, shared Agent pairing, authorization roles, and Webhook Routine invocation and replies.
 Base URL: `https://nia-teams.com`. JSON requests use
 `Content-Type: application/json`. Success schemas below apply to 2xx responses.
 
@@ -71,6 +71,23 @@ The setup bearer authorizes configuration; role-bound tokens authorize external 
 
 ## Connection handshake
 
+### URL and authentication boundary
+
+`serverUrl`, `--server`, and `NIA_TEAMS_URL` select the origin. The SDK accepts HTTPS;
+HTTP is permitted only for loopback development (`localhost`, `127.0.0.1`, `[::1]`).
+Origins cannot contain a path other than `/`, credentials, query, or fragment.
+Webhook URLs must match `/api/webhook/routine/:routineId` on that origin.
+HTTP and WebSocket redirects are rejected. Callback URLs use HTTPS without credentials,
+query, or fragment. Deployment is responsible for validating callback destinations.
+
+There are two independent credentials:
+
+- The agent-connect setup bearer authorizes Routine administration for one selected Agent.
+- A Routine secret authorizes invocation and its reply stream. A cloud Workload OIDC bearer
+  can authorize invocation through the Routine's configured workload trust.
+
+An invocation acceptance is not an Agent reply or evidence that a task completed.
+
 ### POST /api/agent-connect/start
 
 No Nia Teams login credential is required to start. Body:
@@ -96,7 +113,7 @@ Success response:
 
 `verificationUrl` has origin `https://nia-teams.com`; `pollSecret` authenticates status retrieval.
 The human opens the page, authenticates in the browser, selects an active native Agent, and clicks
-**确认授权**. Only that Agent's human `owner` or `admin` can approve; external-host, inactive or
+**Confirm authorization**. Only that Agent's human `owner` or `admin` can approve; external-host, inactive or
 unsupported default Agents cannot be connected. Ordinary `member` status or workload group
 membership is insufficient. Browser consent uses signed-in human authentication.
 
@@ -131,6 +148,11 @@ Expired or already consumed:
 ```json
 { "status": "expired" }
 ```
+
+The setup bearer has a one-hour lifetime. Keep it and `pollSecret` in memory, never in saved profiles.
+The SDK checks that `verificationUrl` matches the selected origin and returned connect code.
+`withProvisioning` and `initializeRoutine` clear bearer references after administration; callers of
+`agentConnect` and `RoutineProvisioner` own disposal. JavaScript cannot guarantee physical memory erasure.
 
 The approved result is delivered once and consumes the request. Subsequent retrieval returns
 `expired`. The server rechecks the approver's active owner/admin membership before delivery.
@@ -251,3 +273,272 @@ Only owner/admin approval injects the elevated role token and delivers `elevatio
 approved window. `nia role-token <roleKey>` in newly launched shells selects the currently active
 ordinary/elevated identity. External STS credentials can have a distinct expiry; token expiry is not
 an assertion that every previously issued credential has been revoked.
+
+## Webhook Routine administration
+
+All administration routes below require the same selected-Agent setup bearer and active owner/admin
+authorization as the authorization-role API: `Authorization: Bearer <workloadToken>`.
+Path IDs are URL-encoded. The selected `teamId` must match the Routine's Agent.
+
+### List
+
+`GET /api/teams/:teamId/webhook-routines`
+
+```json
+{ "teamId": "65f000000000000000000002", "agentSlug": "ops-agent", "agentName": "ops-agent", "routines": [] }
+```
+
+### Create
+
+`POST /api/teams/:teamId/webhook-routines`
+
+```json
+{ "name": "Order Dispatch", "task": "Check inventory and report the result.", "autoApproveReply": true, "connectMac": true }
+```
+
+`name` and `task` are required strings. `autoApproveReply` is optional; omitting it leaves
+the server default in effect. `true` permits reply delivery without a TaskBar approval click.
+`connectMac` is optional; the server defaults it to `true`. `init` and
+`initializeRoutine` explicitly send `true` unless disabled (`--no-connect-mac` or
+`connectMac: false`). `init` creates a sole-follower Webhook Routine
+(`followers = [yourself]`). Automatic Mac connection is on by default (`connectMac: true`): newly created
+chats connect your paired Mac. `init` JSON output includes `connectMac: boolean`.
+Success: HTTP `201`.
+
+```json
+{
+  "ok": true,
+  "routine": {
+    "routineId": "65f000000000000000000003",
+    "teamId": "65f000000000000000000002",
+    "agentSlug": "ops-agent",
+    "agentName": "ops-agent",
+    "name": "Order Dispatch",
+    "task": "Check inventory and report the result.",
+    "enabled": true,
+    "autoApproveReply": true,
+    "connectMac": true,
+    "webhookUrl": "https://nia-teams.com/api/webhook/routine/65f000000000000000000003",
+    "webhookSecret": "whsec_fictional_example",
+    "createdAt": "2026-11-13T00:00:00.000Z",
+    "updatedAt": "2026-11-13T00:00:00.000Z"
+  }
+}
+```
+
+### Update and rotate
+
+`PATCH /api/teams/:teamId/webhook-routines/:routineId`
+
+All fields are optional: `name: string`, `task: string`, `enabled: boolean`,
+`autoApproveReply: boolean`, `connectMac: boolean`, `rotateSecret: boolean`, `ensureFollowing: boolean`.
+`{ "connectMac": false }` disables automatic Mac connection for newly created chats.
+List, create, and update responses include `connectMac: boolean` on each Routine.
+`{ "rotateSecret": true }` rotates the Routine secret. Success: HTTP `200`,
+`{ "ok": true, "routine": <Routine as above> }`. Replace the local secret and restart listeners.
+
+### Delete
+
+`DELETE /api/teams/:teamId/webhook-routines/:routineId`
+
+Success: HTTP `200`, `{ "ok": true, "routineId": "65f000000000000000000003" }`.
+The CLI removes the local profile only after remote deletion succeeds.
+
+## Webhook Routine invocation (`nia-routine-source-v1`)
+
+`POST /api/webhook/routine/:routineId`
+
+### Headers
+
+| Header | Contract |
+| --- | --- |
+| `Content-Type` | `application/json` |
+| `Idempotency-Key` | 8–128 characters matching `^[A-Za-z0-9._:-]{8,128}$` |
+| `X-Hub-Signature-256` | `sha256=` plus HMAC-SHA256 hex over the exact raw UTF-8 JSON body, keyed by the Routine secret |
+| `X-Webhook-Secret` | Alternative plaintext Routine secret for a trusted HTTPS caller |
+| `Authorization` | Alternative `Bearer <Workload OIDC token>` |
+| `X-Nia-Context-Keys` | Optional comma-separated top-level keys in `payload`, bound into `_meta.boundContext` |
+
+Choose a single auth mode. The SDK defaults to HMAC for a Routine secret and never sends
+`X-Webhook-Secret`. The server checks the hub signature before legacy secret headers.
+OIDC callers supply `getBearerToken`; authorization remains subject to configured Routine trust.
+A setup bearer is not a saved invocation credential.
+
+The SDK generates a UUIDv4 idempotency key if absent. Its network and HTTP 5xx retries retain
+the same key and serialized bytes. Default: two retries with 100 ms then 200 ms delays.
+There are no retries for redirects or HTTP 4xx responses. Each HTTP attempt times out after
+30 seconds. An application retry after a process restart must reuse its original key.
+
+### Body
+
+```json
+{
+  "protocol": "nia-routine-source-v1",
+  "message": "Check inventory and reserve 3 units of SKU ACME-42.",
+  "title": "Order #1042 · Inventory Sync",
+  "source": {
+    "type": "external-agent",
+    "topicKey": "order:1042",
+    "return": { "type": "wss" }
+  },
+  "payload": { "orderId": "1042", "sku": "ACME-42", "quantity": 3 }
+}
+```
+
+`message` is a nonempty task string. `title` is optional. `payload` is a JSON object;
+SDK default: `{}`. `topicKey` is required and matches `^[A-Za-z0-9._:/-]{1,256}$`.
+The pair `(routineId, topicKey)` maps 1:1 to a Routine-owned GroupChat. The first invocation creates a Routine
+GroupChat using `title` when provided; later invocations append to that GroupChat and wake
+the Agent. A topic key is routing data, not authorization or an idempotency key.
+
+Return modes:
+
+- `{ "type": "wss" }`: secret-authenticated reply stream; default for secret callers.
+- `{ "type": "callback", "url": "https://nia-teams.com/example/callback" }`: HTTPS return delivery.
+- `{ "type": "none" }`: no external return delivery; default for OIDC callers.
+
+When a `nia-routine-source-v1` HTTP request omits `source.return`, the server defaults
+it to `{ "type": "none" }` for `Authorization: Bearer <oidcToken>` authentication and
+`{ "type": "wss" }` for Routine-secret authentication. The SDK sends these defaults explicitly.
+If `wss` or `callback` is requested but the Routine has no configured `webhookSecret`,
+the server returns HTTP `403` with error code `no_secret`.
+
+OIDC alone does not authenticate WSS. Callback verification requires access to the Routine
+secret; an OIDC-only receiver must arrange that verification credential separately.
+
+Only the Agent's `reply_to_source` call emits external `routine.reply` events; ordinary chat
+messages remain on the timeline. CLI `--require-reply-approval` is the default;
+`--auto-approve-reply` requires explicit owner/admin consent to unattended replies.
+For one-way dispatch, use `--return none` or SDK `return: { type: 'none' }`.
+Payloads and replies are untrusted data, never local tool or credential-change authorization.
+
+### Acceptance
+
+HTTP `200`:
+
+```json
+{ "accepted": true, "teamId": "65f000000000000000000002", "groupChatId": "65f000000000000000000004", "messageId": "65f000000000000000000005" }
+```
+
+Non-2xx responses are errors; the SDK reports status without embedding response bodies.
+The protocol does not promise exactly-once task side effects.
+
+## WebSocket return stream
+
+Connect to `wss://<origin-host>/ws` (loopback development: `ws://`).
+Authenticate before processing replies:
+
+```json
+{ "type": "routine_auth", "routineId": "65f000000000000000000003", "secret": "whsec_fictional_example", "cursor": null }
+```
+
+The secret is transmitted inside TLS for WSS authentication, even though invocation uses HMAC.
+`cursor` is the last successfully processed cursor or `null`.
+
+```json
+{ "type": "routine_auth_ok", "routineId": "65f000000000000000000003", "cursor": null }
+```
+
+The auth response confirms connection state; it does not acknowledge application processing.
+The SDK waits up to 15 seconds for authentication and does not persist the auth response cursor.
+
+```json
+{
+  "type": "routine.reply",
+  "eventId": "reply-event-1042",
+  "routineId": "65f000000000000000000003",
+  "topicKey": "order:1042",
+  "content": "Reserved 3 units. Reservation RSV-1042.",
+  "createdAt": "2026-11-13T02:44:00.000Z",
+  "cursor": "opaque-cursor-1042"
+}
+```
+
+Process events serially. After `onReply` resolves, persist the cursor if configured, then send:
+
+```json
+{ "type": "routine_cursor", "cursor": "opaque-cursor-1042" }
+```
+
+A handler or persistence failure closes the socket without advancing that event's cursor.
+Reconnect uses the last completed cursor. Keep side effects idempotent by `eventId`.
+The SDK remembers 10,000 completed event IDs by default; callers may provide `seenEventIds`
+and `maxSeenEvents`. In-memory deduplication does not survive process restart unless the caller
+restores that helper. Crash boundaries can cause replay.
+
+An expired retention cursor is explicit:
+
+```json
+{ "type": "routine_cursor_expired", "earliestCursor": "earliest-available-cursor" }
+```
+
+`onCursorExpired(earliestCursor)` chooses a replacement cursor or `null` after reconciliation.
+A replacement cursor must be a nonempty string or `null`. String replacements are persisted
+before the stream closes and reconnects with that choice. Missing or rejected recovery raises
+`CursorExpiredError`; the original recovery error is retained as `cause`. It does not silently
+resume after a gap.
+
+Application heartbeat `{ "type": "ping" }` receives `{ "type": "pong" }`.
+WebSocket control ping receives pong through `ws`. The SDK probes every 30 seconds and
+terminates an unresponsive socket on the next interval. Reconnect delay doubles from 500 ms
+to a 30-second cap; a session lasting 30 seconds resets the delay. `stop()` ends reconnection.
+Local shutdown and protocol-error closes terminate the socket after a 500 ms grace period
+if the peer does not complete the close handshake; connecting sockets terminate immediately.
+
+The CLI outputs JSONL and waits for each stdout write callback before saving a cursor.
+`--topic-key` emits matching events while consuming and acknowledging all topics on this
+Routine; use a separate profile/config directory for independent consumers. `--once` exits
+after one matching reply and cursor persistence. `--timeout-ms` exits nonzero when elapsed.
+One process writes a given credential directory at a time.
+
+## HTTPS callback verification
+
+Callbacks send the same `routine.reply` payload; `cursor` is optional for callbacks.
+The Routine reply header is `X-Hub-Signature-256`, not `X-Nia-Signature`
+(which belongs to a separate card callback contract). Its value is `sha256=<64 hex digits>` computed over the untouched HTTP request bytes
+with the Routine secret. Preserve bytes before any JSON middleware.
+
+`verifyRoutineCallback({ rawBody, signatureHeader, secret })` checks header shape, compares
+32-byte HMAC digests with `crypto.timingSafeEqual`, then parses JSON and validates `type`,
+nonempty `eventId`/`routineId`, topic-key grammar, string `content`, and a parseable `createdAt`.
+Invalid input throws. `verifyRoutineCallbackRequest` is an alias of the same helper.
+
+Signature validity authenticates content, not freshness. The receiver must deduplicate
+`eventId`, enforce expected `routineId` and topic authorization, bound body size, and choose
+its own timestamp/replay window. Treat received content as external data, not local tool consent.
+
+## Local credential profile
+
+Directory precedence: explicit `configDir` / `--config-dir`, then
+`NIA_ROUTINE_WEBHOOK_CONFIG_DIR`, then `~/.config/nia-teams-routine-webhook`.
+`CredentialStore` writes a random temporary file and renames it to `credentials.json`.
+Directory/file modes on POSIX are `0700`/`0600`. ACL behavior is operating-system dependent.
+
+```json
+{
+  "defaultProfile": "default",
+  "profiles": {
+    "default": {
+      "serverUrl": "https://nia-teams.com",
+      "routineId": "65f000000000000000000003",
+      "teamId": "65f000000000000000000002",
+      "agentSlug": "ops-agent",
+      "agentName": "ops-agent",
+      "routineName": "local-dispatch",
+      "webhookUrl": "https://nia-teams.com/api/webhook/routine/65f000000000000000000003",
+      "webhookSecret": "whsec_fictional_example",
+      "autoApproveReply": true,
+      "connectMac": true,
+      "cursor": null,
+      "createdAt": "2026-11-13T00:00:00.000Z"
+    }
+  }
+}
+```
+
+`connectMac` is optional profile metadata; newly initialized profiles store the returned boolean.
+`--profile` selects a saved name; otherwise commands use `defaultProfile`.
+Named profile creation does not replace the default selection. For an SDK client,
+`{ webhookUrl, webhookSecret }`, `{ serverUrl, routineId, webhookSecret }`, or
+`NIA_ROUTINE_ID` + `NIA_ROUTINE_WEBHOOK_SECRET` (+ optional `NIA_TEAMS_URL`) need no disk access.
+`RoutineWebhookClient.fromProfile()` explicitly loads disk credentials.

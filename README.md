@@ -1,31 +1,33 @@
 # Nia Teams Connect Skills
 
-Official Agent skills for connecting [Nia Teams](https://nia-teams.com) Agents to external cloud infrastructure, cluster authorization, and developer tools.
+Connect [Nia Teams](https://nia-teams.com) cloud Agents to cloud infrastructure, clusters, and external applications.
 
-English | [简体中文](./README_CN.md)
-
-## Quick Install
-
-Run the install command **in the environment that already holds cloud or cluster administrator permissions** (such as a workstation or ops environment authenticated with administrator `aliyun` CLI, `tccli`, or `kubectl`—**not inside the target Agent being authorized**):
+[Chinese documentation](./README_CN.md)
 
 ```sh
 npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
 ```
 
-If your local terminal has no Alibaba Cloud administrator credentials, create a temporary AK/SK with `AdministratorAccess` in the [RAM console](https://ram.console.aliyun.com/users), give it to your local Agent (such as Codex / Claude Code) for setup, and disable or delete the temporary AK (and any temporary RAM user created for it) after OIDC setup and live verification.
+AI assistants load `skills/<name>/SKILL.md` after installation. For the npm package, load `node_modules/@nia-teams/routine-webhook/skills/routine-webhook/SKILL.md`.
 
-## Available Skills
+## Skills
 
-| Skill | Description | Install Command | Documentation |
-| --- | --- | --- | --- |
-| [`cloud-oidc`](./skills/cloud-oidc/) | Connect a Nia Teams Agent to Alibaba Cloud RAM, Tencent Cloud CAM, or Kubernetes RBAC following Zero Trust Architecture ([NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final)) and the open OIDC standard, with two-tier privilege separation (**ordinary permissions** and **elevated permissions**). | `npx skills add nia-teams/connect-skills --skill cloud-oidc` | [English](./skills/cloud-oidc/README.md) · [简体中文](./skills/cloud-oidc/README_CN.md) · [`SKILL.md`](./skills/cloud-oidc/SKILL.md) |
+| Skill | Purpose | Documentation |
+| --- | --- | --- |
+| [`cloud-oidc`](./skills/cloud-oidc/) | Zero-trust cloud and cluster access via OIDC, with ordinary and human-approved elevated permissions for Alibaba Cloud, Tencent Cloud, and Kubernetes. | [English](./skills/cloud-oidc/README.md) · [Chinese](./skills/cloud-oidc/README_CN.md) · [AI instructions](./skills/cloud-oidc/SKILL.md) |
+| [`routine-webhook`](./skills/routine-webhook/) · [`@nia-teams/routine-webhook`](./packages/routine-webhook/) (CLI & TypeScript SDK) | Invoke a Nia Teams cloud Agent by `topicKey` from external scripts, backend services, or local coding agents; receive verified `routine.reply` events over WebSocket or HTTPS callbacks (Node.js 20+). | [English](./packages/routine-webhook/README.md) · [Chinese](./packages/routine-webhook/README_CN.md) · [AI instructions](./skills/routine-webhook/SKILL.md) |
+
+## Execution Environments
+
+- **cloud-oidc** runs in an environment holding cloud or cluster administrator credentials through `aliyun`, `tccli`, or `kubectl`. Keep those credentials local and remove temporary administrator credentials after setup and verification.
+- **routine-webhook** runs in an external script, service, or local coding assistant environment with Node.js 20+. Its SDK and CLI are published as [`@nia-teams/routine-webhook`](./packages/routine-webhook/): `npm install @nia-teams/routine-webhook`.
+- Neither skill runs inside the target Nia Teams cloud Agent sandbox being connected. Browser pairing requires that Agent's human owner or admin.
 
 ## Repository Layout
 
-Each skill under [`skills/<skill-name>/`](./skills/) includes its own human documentation and self-contained AI instruction tree:
-
-- `skills/<skill-name>/README.md` & `README_CN.md` — Human architecture, setup walkthrough, and permission boundary guide (shareable directly as the skill entry URL).
-- `skills/<skill-name>/SKILL.md` & `references/` — Self-contained instructions loaded by the provisioning Agent via `npx skills add`.
-- [`docs/SPECIFICATION.md`](./docs/SPECIFICATION.md) — Shared HTTP API, Agent Connect pairing, and Workload OIDC JWT specification.
+- `skills/`: self-contained AI instructions installed by `npx skills add`.
+- [`packages/routine-webhook/`](./packages/routine-webhook/): npm SDK, CLI, examples, and human documentation.
+- [Specification](./docs/SPECIFICATION.md): shared pairing, Workload OIDC, authorization roles, and Routine protocols.
+- [Maintenance](./AGENTS.md): validation and change boundaries.
 
 [MIT](./LICENSE) © Nia Teams

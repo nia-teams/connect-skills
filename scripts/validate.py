@@ -21,8 +21,11 @@ MARKDOWN = {
     'skills/cloud-oidc/SKILL.md',
     *{f'skills/cloud-oidc/references/{p}.md' for p in ('aliyun', 'tencentcloud', 'kubernetes')},
 }
+MARKDOWN |= {'skills/routine-webhook/SKILL.md', *{f'packages/routine-webhook/{p}' for p in (
+    'README.md', 'README_CN.md', 'AGENTS.md', 'docs/SPECIFICATION.md',
+    'docs/assets/README.md', 'skills/routine-webhook/SKILL.md')}}
 IMAGES = {'agent-connect.png', 'group-chat-overview.png', 'taskbar-elevation.png'}
-actual = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob('*.md') if '.git' not in p.parts}
+actual = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob('*.md') if not {'.git', 'node_modules', 'dist'} & set(p.parts)}
 assert actual == MARKDOWN, f'Markdown layout differs: {actual ^ MARKDOWN}'
 assert not (ROOT / 'docs/cloud-oidc').exists(), 'Duplicate human guide directory'
 assert (ROOT / 'LICENSE').is_file(), 'Missing license'
@@ -64,8 +67,11 @@ def check_png(path):
     counts['images'] += 1
 
 
-for image in sorted(IMAGES):
-    check_png(ROOT / 'docs/assets' / image)
+assert {p.name for p in (ROOT / 'docs/assets').glob('*.png')} == IMAGES
+assert {p.name for p in (ROOT / 'packages/routine-webhook/docs/assets').glob('*.png')} == {'agent-connect.png', 'routine-topic-chat.png'}
+for assets in ('docs/assets', 'packages/routine-webhook/docs/assets'):
+    for image in sorted((ROOT / assets).glob('*.png')):
+        check_png(image)
 
 AI_CONTRACT_FILES = {
     'skills/cloud-oidc/SKILL.md',
@@ -79,11 +85,14 @@ for relative in sorted(MARKDOWN):
     text = path.read_text()
     counts['markdown'] += 1
     assert not re.search(r'^title\s*:', text, re.M), f'Unexpected title metadata: {path}'
+    if path.name == 'SKILL.md':
+        assert text.startswith('---\n'), f'Missing skill frontmatter: {path}'
     if text.startswith('---\n'):
         front = yaml.safe_load(text.split('---\n', 2)[1])
-        assert path == skill_root / 'SKILL.md'
-        assert set(front) == {'name', 'description'} and front['name'] == 'cloud-oidc'
+        assert relative in {'skills/cloud-oidc/SKILL.md', 'skills/routine-webhook/SKILL.md', 'packages/routine-webhook/skills/routine-webhook/SKILL.md'}
+        assert set(front) == {'name', 'description'} and front['name'] == path.parent.name
         assert isinstance(front['description'], str) and len(front['description']) > 100
+        assert not re.search(r'[\u3400-\u9fff]', front['description']), f'English description required: {path}'
     assert text.count('```') % 2 == 0, f'Unclosed fence: {path}'
     for language, block in re.findall(r'^```([\w-]+)\n(.*?)^```', text, re.M | re.S):
         if language in ('bash', 'sh', 'shell'):
@@ -105,12 +114,21 @@ for relative in sorted(MARKDOWN):
             continue
         destination = (path.parent / unquote(target.split('#')[0])).resolve()
         assert destination.is_relative_to(ROOT) and (destination.is_file() or destination.is_dir()), f'{path}: broken {target}'
-        if relative in AI_CONTRACT_FILES:
-            assert destination.is_relative_to(skill_root) and destination.is_file(), f'Installed skill external dependency: {target}'
+        # Human cloud guides intentionally reference the shared screenshot directory.
+        if relative in AI_CONTRACT_FILES or relative == 'skills/routine-webhook/SKILL.md':
+            installed_root = ROOT / 'skills' / Path(relative).parts[1]
+            assert destination.is_relative_to(installed_root) and destination.is_file(), f'Installed skill external dependency: {target}'
         counts['links'] += 1
+    if relative in ('README.md', 'README_CN.md', 'packages/routine-webhook/README.md', 'packages/routine-webhook/README_CN.md'):
+        for word in ('无'+'缝', '绝'+'不', '一'+'律', '严'+'格', '精'+'确', '完'+'整', '确'+'保', '自'+'动', '直'+'接'):
+            assert word not in text, f'Prose strengthener: {path}: {word}'
     if relative in ('README.md', 'README_CN.md'):
         assert text.startswith('# Nia Teams Connect Skills\n')
-        assert 'skills/cloud-oidc/README' in text
+        assert 'skills/cloud-oidc/README' in text and 'packages/routine-webhook/README' in text
+        if relative == 'README.md':
+            assert not re.search(r'[\u3400-\u9fff]', text), 'Root English README must be English only'
+        else:
+            assert all(re.search(r'[\u3400-\u9fff]', h) for h in re.findall(r'^## (.+)', text, re.M)), 'Chinese README headings required'
     if relative == 'skills/cloud-oidc/README.md':
         assert text.startswith('# Zero-Trust Cloud Access for Agents (`cloud-oidc`)\n')
     if relative == 'skills/cloud-oidc/README_CN.md':
@@ -128,7 +146,16 @@ assert re.findall(r'^## (.+)$', skill, re.M) == [
     'Identity Matrix & Two-Tier Permissions', 'Two-Phase Role Prompt Authoring',
     'Provisioning & Live Verification',
 ]
-assert 35 <= len((ROOT / 'AGENTS.md').read_text().splitlines()) <= 50
+assert 40 <= len((ROOT / 'AGENTS.md').read_text().splitlines()) <= 65
+assert len((ROOT / 'packages/routine-webhook/AGENTS.md').read_text().splitlines()) < 65
+assert 40 <= len((ROOT / 'skills/routine-webhook/SKILL.md').read_text().splitlines()) <= 85
+for relative in ('skills/routine-webhook/SKILL.md', 'docs/SPECIFICATION.md'):
+    assert (ROOT / relative).read_bytes() == (ROOT / 'packages/routine-webhook' / relative).read_bytes(), f'Out of sync: {relative}'
+tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode().split('\0')
+for relative in filter(None, tracked):
+    data = (ROOT / relative).read_bytes().lower()
+    for forbidden in (b'bai' + b'chuan', b'bc' + b'-inner', b'internal' + b'.nia-teams', b'nia.teams' + b'.bc'):
+        assert forbidden not in data, f'Public identity hygiene: {relative}'
 
 # Execute only local jq trust-document generators, isolated in a temporary directory.
 for platform in ('aliyun', 'tencentcloud'):
