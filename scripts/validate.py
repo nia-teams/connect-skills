@@ -19,6 +19,7 @@ MARKDOWN = {
     'README.md', 'README_CN.md', 'AGENTS.md', 'docs/SPECIFICATION.md',
     'skills/cloud-oidc/README.md', 'skills/cloud-oidc/README_CN.md',
     'skills/cloud-oidc/SKILL.md',
+    'skills/agent-bridge/SKILL.md',
     *{f'skills/cloud-oidc/references/{p}.md' for p in ('aliyun', 'tencentcloud', 'kubernetes')},
 }
 MARKDOWN |= {'skills/routine-webhook/SKILL.md', *{f'packages/routine-webhook/{p}' for p in (
@@ -75,6 +76,7 @@ for assets in ('docs/assets', 'packages/routine-webhook/docs/assets'):
 
 AI_CONTRACT_FILES = {
     'skills/cloud-oidc/SKILL.md',
+    'skills/agent-bridge/SKILL.md',
     'skills/cloud-oidc/references/aliyun.md',
     'skills/cloud-oidc/references/tencentcloud.md',
     'skills/cloud-oidc/references/kubernetes.md',
@@ -89,10 +91,11 @@ for relative in sorted(MARKDOWN):
         assert text.startswith('---\n'), f'Missing skill frontmatter: {path}'
     if text.startswith('---\n'):
         front = yaml.safe_load(text.split('---\n', 2)[1])
-        assert relative in {'skills/cloud-oidc/SKILL.md', 'skills/routine-webhook/SKILL.md', 'packages/routine-webhook/skills/routine-webhook/SKILL.md'}
+        assert relative in {'skills/agent-bridge/SKILL.md', 'skills/cloud-oidc/SKILL.md', 'skills/routine-webhook/SKILL.md', 'packages/routine-webhook/skills/routine-webhook/SKILL.md'}
         assert set(front) == {'name', 'description'} and front['name'] == path.parent.name
-        assert isinstance(front['description'], str) and len(front['description']) > 100
-        assert not re.search(r'[\u3400-\u9fff]', front['description']), f'English description required: {path}'
+        assert isinstance(front['description'], str) and len(front['description']) >= (60 if relative == 'skills/agent-bridge/SKILL.md' else 101)
+        if relative != 'skills/agent-bridge/SKILL.md':
+            assert not re.search(r'[\u3400-\u9fff]', front['description']), f'English description required: {path}'
     assert text.count('```') % 2 == 0, f'Unclosed fence: {path}'
     for language, block in re.findall(r'^```([\w-]+)\n(.*?)^```', text, re.M | re.S):
         if language in ('bash', 'sh', 'shell'):
@@ -125,6 +128,7 @@ for relative in sorted(MARKDOWN):
     if relative in ('README.md', 'README_CN.md'):
         assert text.startswith('# Nia Teams Connect Skills\n')
         assert 'skills/cloud-oidc/README' in text and 'packages/routine-webhook/README' in text
+        assert 'skills/agent-bridge/SKILL.md' in text and '--skill agent-bridge' in text
         if relative == 'README.md':
             assert not re.search(r'[\u3400-\u9fff]', text), 'Root English README must be English only'
         else:
@@ -146,6 +150,7 @@ assert re.findall(r'^## (.+)$', skill, re.M) == [
     'Identity Matrix & Two-Tier Permissions', 'Two-Phase Role Prompt Authoring',
     'Provisioning & Live Verification',
 ]
+assert 40 <= len((ROOT / 'skills/agent-bridge/SKILL.md').read_text().splitlines()) <= 70
 assert 40 <= len((ROOT / 'AGENTS.md').read_text().splitlines()) <= 65
 assert len((ROOT / 'packages/routine-webhook/AGENTS.md').read_text().splitlines()) < 65
 assert 40 <= len((ROOT / 'skills/routine-webhook/SKILL.md').read_text().splitlines()) <= 85

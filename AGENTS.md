@@ -10,8 +10,8 @@
 - `docs/SPECIFICATION.md`: public HTTP and JWT wire contract.
 - `npx skills add` installs `skills/<skill>/`; Markdown links inside `SKILL.md` and `references/` must resolve within that tree.
 - npm SDK artifact references use inline `node_modules/<pkg>/...` paths after package installation, not relative Markdown links.
-- SKILL frontmatter contains only `name` and English `description`.
-- Keep cloud-oidc at 70–90 lines; routine-webhook at 40–85 lines.
+- SKILL frontmatter contains only `name` and `description`.
+- Keep cloud-oidc at 70–90 lines; routine-webhook at 40–85 lines; agent-bridge at 40–70 lines.
 - Platform commands and concise two-phase prompt templates belong in references.
 
 ## Contract invariants
