@@ -50,4 +50,4 @@ npx --prefix ~/.dsh/profiles/web nia-dsh connect --invite-code '<code>' --user-n
 
 ## 其他本地 AI
 
-不属于以上六种工具时，在独立目录执行 `npm install @nia-teams/agent-bridge-core`，参考 `node_modules/@nia-teams/agent-bridge-core/dist/index.d.ts` 与 `examples/connect.mjs` 编写后台常驻脚本：调用 `connectWithInvite({ inviteCode, userName, agentName })` 完成建群并打开 `handoffUrl`，再用凭证构造 `new BridgeClient(credentials)`，在 `await bridge.start()` 前注册 `onThreadMessage` 与 `onThreadCancel`，通过 `bridge.rpc('group_chat.send_message', { sessionId: frame.sessionId, toolCallId: frame.deliveryId, content })` 回复群聊。
+不属于以上六种工具时，在独立目录执行 `npm install @nia-teams/agent-bridge-core`，阅读 `node_modules/@nia-teams/agent-bridge-core/skills/agent-bridge-core/SKILL.md` 与 `node_modules/@nia-teams/agent-bridge-core/examples/connect.mjs`（精确类型见 `node_modules/@nia-teams/agent-bridge-core/dist/index.d.ts`）：先调用 `connectWithInvite({ inviteCode, userName, agentName })` 完成建群并打开 `handoffUrl`，再用返回的凭证启动 `BridgeClient` 后台常驻脚本。
