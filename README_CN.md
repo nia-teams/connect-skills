@@ -14,7 +14,7 @@ npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
 
 | 技能 | 用途 | 说明文档 |
 | --- | --- | --- |
-| [`agent-bridge`](./skills/agent-bridge/) | 把你的 AI（Claude Code、Codex、WorkBuddy、豆包、Antigravity、DeepSeek Harness 等）当成群成员拉进群聊，邀朋友进群和你一起跟它对话，解决环境配不通、报错看不懂、越改越乱或截图说不清现场等问题。 | [助手指引](./skills/agent-bridge/SKILL.md) |
+| [`agent-bridge`](./skills/agent-bridge/) | 把你的 AI（Claude Code、Codex、WorkBuddy、豆包、Antigravity、Factory Droid、DeepSeek Harness 等）当成群成员拉进群聊，邀朋友进群和你一起跟它对话，解决环境配不通、报错看不懂、越改越乱或截图说不清现场等问题。 | [助手指引](./skills/agent-bridge/SKILL.md) |
 | [`cloud-oidc`](./skills/cloud-oidc/) | 通过 OIDC 为 Agent 提供零信任云与集群访问，支持阿里云、腾讯云和 Kubernetes，区分普通权限与人工批准的提权权限。 | [中文](./skills/cloud-oidc/README_CN.md) · [英文](./skills/cloud-oidc/README.md) · [助手指引](./skills/cloud-oidc/SKILL.md) |
 | [`routine-webhook`](./skills/routine-webhook/) · [`@nia-teams/routine-webhook`](./packages/routine-webhook/) (命令行工具与 TypeScript SDK) | 外部脚本、后端服务或本地编程助手按 `topicKey` 调用 Nia Teams 云端 Agent，通过 WebSocket 或 HTTPS 回调接收经过验证的 `routine.reply` 事件（Node.js 20+）。 | [中文](./packages/routine-webhook/README_CN.md) · [英文](./packages/routine-webhook/README.md) · [助手指引](./skills/routine-webhook/SKILL.md) |
 
