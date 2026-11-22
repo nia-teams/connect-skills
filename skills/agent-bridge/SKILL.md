@@ -1,6 +1,6 @@
 ---
 name: agent-bridge
-description: Use when a user wants to connect a local AI assistant (Claude Code, Codex, WorkBuddy, CodeBuddy, Doubao, Antigravity, Factory Droid, DeepSeek Harness, or another host) to a Nia Teams GroupChat with WeChat, or bring a paired Agent into another chat.
+description: Use when a user wants to connect a local AI assistant (Claude Code, Codex, WorkBuddy, CodeBuddy, Doubao, Antigravity, Factory Droid, Pi Coding Agent, DeepSeek Harness, or another host) to a Nia Teams GroupChat with WeChat, or bring a paired Agent into another chat.
 ---
 
 # Connect a local AI to Nia Teams
@@ -41,6 +41,10 @@ nia-agy connect --cwd '.'
 # Factory Droid
 npm install -g @nia-teams/droid-bridge
 nia-droid connect --cwd '.'
+
+# Pi Coding Agent
+npm install -g @nia-teams/pi-bridge
+nia-pi connect --cwd '.'
 
 # DeepSeek Harness (DSH)
 dsh plugin --profile web add @nia-teams/dsh-plugin
