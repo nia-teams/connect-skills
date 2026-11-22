@@ -1,57 +1,60 @@
 ---
 name: agent-bridge
-description: 把你的 AI（Claude Code、Codex、WorkBuddy、豆包、Antigravity、Factory Droid、DeepSeek Harness 等）当成群成员拉进群聊，邀请朋友进群和你一起直接跟这个 AI 对话，解决用 AI 时环境配不通、满屏报错看不懂、死循环越改越乱、跟 AI 讲不清需求、截图问人也说不明白现场等各种问题。
+description: Use when a user wants to connect a local AI assistant (Claude Code, Codex, WorkBuddy, CodeBuddy, Doubao, Antigravity, Factory Droid, DeepSeek Harness, or another host) to a Nia Teams GroupChat with WeChat, or bring a paired Agent into another chat.
 ---
 
-# 拉本地 AI 进群协作
+# Connect a local AI to Nia Teams
 
-将当前运行在本机的 AI 作为群成员拉进 Nia Teams 群聊，让邀请码所属的朋友与用户一起在群里直接跟当前 AI 对话协作；模型推理、工作目录与工具执行留在本机。
+Pair this local AI as a remote Agent in a Nia Teams GroupChat. Friends can collaborate with the Agent in the chat; model inference and tools still run on the local AI host in the selected working directory.
 
-## 输入参数
+## Choose the chat
 
-- `inviteCode`：邀请码；未知时向用户询问。
-- `userName`：首次注册使用的用户显示名；无法从已知上下文确定时向用户询问。
-- `agentName`：当前 AI 在群聊中的名字（1–60 字符），自行拟定。
-- `cwd`：当前工作目录（`.`）。
+- To join an existing GroupChat, use `--group-link '<group-invite-url>'`. Use the full `/join/<token>` invite URL; a `/share/<token>` link is read-only. If the user asks to join a chat but supplies no invite URL, ask for it. The invite joins both the user and this Agent.
+- To create a new GroupChat with the user and this Agent, omit `--group-link`.
+- Use `--agent-name '<agent>'` if a display name is wanted for the new Agent.
 
-本机已有同一服务端的配对凭证时，只需 `--invite-code`，复用原账号与 Agent 建新群。
+## Run on the local AI host
 
-## 安装与连接（Node.js 20+，豆包需 22+）
-
-按当前运行的本地 AI 选择对应包安装并执行：
+Use Node.js 20+ (22+ for Doubao). Select the matching adapter and run its commands from the project directory. For npm adapters the syntax is `<nia-cli> connect [--group-link '<group-invite-url>'] [--agent-name '<agent>'] --cwd '.'`. DeepSeek Harness uses `npx --prefix ~/.dsh/profiles/web nia-dsh connect [--group-link '<group-invite-url>'] [--agent-name '<agent>']` from the project directory.
 
 ```sh
 # Claude Code
 npm install -g @nia-teams/claude-code-plugin
-nia-claude connect --invite-code '<code>' --user-name '<user>' --agent-name '<agent>' --cwd '.'
+nia-claude connect --cwd '.'
 
-# OpenAI Codex
+# Codex
 npm install -g @nia-teams/codex-bridge
-nia-codex connect --invite-code '<code>' --user-name '<user>' --agent-name '<agent>' --cwd '.'
+nia-codex connect --cwd '.'
 
 # WorkBuddy / CodeBuddy
 npm install -g @nia-teams/workbuddy-plugin
-nia-workbuddy connect --invite-code '<code>' --user-name '<user>' --agent-name '<agent>' --cwd '.'
+nia-workbuddy connect --cwd '.'
 
-# 豆包（Doubao Work / Doubao CLI）
+# Doubao (豆包)
 npm install -g @nia-teams/doubao-bridge
-nia-doubao connect --invite-code '<code>' --user-name '<user>' --agent-name '<agent>' --cwd '.'
+nia-doubao connect --cwd '.'
 
-# Google Antigravity CLI
+# Antigravity
 npm install -g @nia-teams/agy-bridge
-nia-agy connect --invite-code '<code>' --user-name '<user>' --agent-name '<agent>' --cwd '.'
+nia-agy connect --cwd '.'
 
 # Factory Droid
 npm install -g @nia-teams/droid-bridge
-nia-droid connect --invite-code '<code>' --user-name '<user>' --agent-name '<agent>' --cwd '.'
+nia-droid connect --cwd '.'
 
 # DeepSeek Harness (DSH)
 dsh plugin --profile web add @nia-teams/dsh-plugin
-npx --prefix ~/.dsh/profiles/web nia-dsh connect --invite-code '<code>' --user-name '<user>' --agent-name '<agent>'
+npx --prefix ~/.dsh/profiles/web nia-dsh connect
+# After connect completes, run dsh web in the background.
+dsh web
 ```
 
-前六种工具的 `connect` 会启动后台守护进程并在浏览器打开 `handoffUrl`（该守护进程已在运行时加 `--no-start`）；DSH 执行 `connect` 后在工作目录后台运行 `dsh web`。远程机器或浏览器未能打开时，将输出的 `handoffUrl` 原样发给用户点击进群。
+## WeChat scan and browser handoff
 
-## 其他本地 AI
+- **First connection:** `connect` displays a QR code in the terminal. Ask the user to scan it with WeChat while `connect` waits. The scan registers or reuses their Nia Teams account, pairs this Agent, and adds both to the selected chat.
+- **Credentials already saved on this machine:** Run `connect` with the same chat selection rules. It reuses the local Agent and requires no new scan.
+- **After connection:** The CLI saves credentials and starts the background daemon (except DSH, which uses `dsh web`). It opens `handoffUrl` in the browser. On a remote or headless host, give the user the printed `handoffUrl` to enter the chat.
 
-不属于以上七种工具时，在独立目录执行 `npm install @nia-teams/agent-bridge-core`，阅读 `node_modules/@nia-teams/agent-bridge-core/skills/agent-bridge-core/SKILL.md` 与 `node_modules/@nia-teams/agent-bridge-core/examples/connect.mjs`（精确类型见 `node_modules/@nia-teams/agent-bridge-core/dist/index.d.ts`）：先调用 `connectWithInvite({ inviteCode, userName, agentName })` 完成建群并打开 `handoffUrl`，再用返回的凭证启动 `BridgeClient` 后台常驻脚本。
+## Other local AI hosts
+
+Install `@nia-teams/agent-bridge-core` in your integration project. Read `node_modules/@nia-teams/agent-bridge-core/skills/agent-bridge-core/SKILL.md` and `node_modules/@nia-teams/agent-bridge-core/examples/wechat-connect.mjs`; use `node_modules/@nia-teams/agent-bridge-core/dist/index.d.ts` for types. Call `connectWithWeChat({ groupLink?, agentName? })` to connect, then start `BridgeClient` in the background with the returned credentials.

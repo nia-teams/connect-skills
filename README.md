@@ -14,13 +14,23 @@ AI assistants load `skills/<name>/SKILL.md` after installation. For the npm pack
 
 | Skill | Purpose | Documentation |
 | --- | --- | --- |
-| [`agent-bridge`](./skills/agent-bridge/) | Bring your AI (Claude Code, Codex, WorkBuddy, Doubao, Antigravity, Factory Droid, DeepSeek Harness, or others) into a GroupChat as a member so friends can talk to it with you to fix setup errors, cryptic tracebacks, edit loops, and issues too messy to explain with screenshots. | [AI instructions](./skills/agent-bridge/SKILL.md) |
+| [`agent-bridge`](./skills/agent-bridge/) | Connect a local AI assistant to a GroupChat as a remote Agent with one WeChat scan. | [AI instructions](./skills/agent-bridge/SKILL.md) |
 | [`cloud-oidc`](./skills/cloud-oidc/) | Zero-trust cloud and cluster access via OIDC, with ordinary and human-approved elevated permissions for Alibaba Cloud, Tencent Cloud, and Kubernetes. | [English](./skills/cloud-oidc/README.md) · [Chinese](./skills/cloud-oidc/README_CN.md) · [AI instructions](./skills/cloud-oidc/SKILL.md) |
 | [`routine-webhook`](./skills/routine-webhook/) · [`@nia-teams/routine-webhook`](./packages/routine-webhook/) (CLI & TypeScript SDK) | Invoke a Nia Teams cloud Agent by `topicKey` from external scripts, backend services, or local coding agents; receive verified `routine.reply` events over WebSocket or HTTPS callbacks (Node.js 20+). | [English](./packages/routine-webhook/README.md) · [Chinese](./packages/routine-webhook/README_CN.md) · [AI instructions](./skills/routine-webhook/SKILL.md) |
 
+## Local AI quick start
+
+```sh
+npx skills add nia-teams/connect-skills --skill agent-bridge
+```
+
+Follow the [adapter instructions](./skills/agent-bridge/SKILL.md) to run `connect` on the local AI host. Scan the QR code shown in the terminal with WeChat to register or reuse your Nia Teams account and pair the Agent.
+
+Pass `--group-link` with a `/join/<token>` invite URL to add both you and the Agent to an existing GroupChat. A `/share/<token>` URL is read-only. Omit the option to create a new GroupChat with the Agent. Later runs on the same machine reuse saved credentials without another scan.
+
 ## Execution Environments
 
-- **agent-bridge** runs on the local AI host (Node.js 20+, or 22+ for Doubao): `npx skills add nia-teams/connect-skills --skill agent-bridge`.
+- **agent-bridge** runs on the local AI host (Node.js 20+, or 22+ for Doubao).
 - **cloud-oidc** runs in an environment holding cloud or cluster administrator credentials through `aliyun`, `tccli`, or `kubectl`. Keep those credentials local and remove temporary administrator credentials after setup and verification.
 - **routine-webhook** runs in an external script, service, or local coding assistant environment with Node.js 20+. Its SDK and CLI are published as [`@nia-teams/routine-webhook`](./packages/routine-webhook/): `npm install @nia-teams/routine-webhook`.
 - None of these skills run inside the target cloud Agent sandbox.
