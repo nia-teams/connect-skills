@@ -1,23 +1,60 @@
 #!/usr/bin/env node
 import { serverOrigin } from '../dist/http.js';
 import { parseArgs } from 'node:util';
+import { readFile } from 'node:fs/promises';
 import { RoutineWebhookClient, CredentialStore, initializeRoutine, withProvisioning, routineProfile } from '../dist/index.js';
 
 const help = `nia-routine-webhook <init|send|listen|profiles|rotate-secret|delete>
   init --name NAME --task TEXT [--auto-approve-reply|--require-reply-approval] [--connect-mac|--no-connect-mac]
   send --topic-key KEY [--message TEXT | stdin] [--title TEXT] [--payload JSON]
        [--context-keys k1,k2] [--return wss|none|https://...] [--idempotency-key KEY]
-  listen [--topic-key KEY] [--once] [--timeout-ms 600000]
+  listen [--topic-key KEY] [--once] [--timeout-ms MS]
+  listen runs until stopped unless --timeout-ms is set or --once is used (default 600000 ms).
+  Local MCP (send/listen): --client-id ID [--mcp NAME=COMMAND] [--mcp-url NAME=URL] [--mcp-config PATH]
+  Repeat --mcp and --mcp-url for multiple servers. Use a config file for subprocess arguments.
   Shared: --profile NAME --config-dir DIR --server https://nia-teams.com
   Setup: --label TEXT --timeout-ms 600000
   profiles displays redacted local profiles. rotate-secret and delete require browser approval.
 `;
-const strings = ['name','task','profile','config-dir','server','label','timeout-ms','topic-key','message','title','payload','context-keys','return','idempotency-key'];
+const strings = ['name','task','profile','config-dir','server','label','timeout-ms','topic-key','message','title','payload','context-keys','return','idempotency-key','client-id','mcp-config'];
 async function output(value) {
   await new Promise((resolve, reject) => process.stdout.write(JSON.stringify(value) + '\n', error => error ? reject(error) : resolve()));
 }
+async function localMcpOptions(values, command) {
+  const servers = Object.create(null);
+  const add = (name, target) => {
+    if (Object.hasOwn(servers, name)) throw new Error('Duplicate local MCP server name');
+    servers[name] = target;
+  };
+  if (values['mcp-config'] !== undefined) {
+    let config;
+    try { config = JSON.parse(await readFile(values['mcp-config'], 'utf8')); }
+    catch { throw new Error('Could not read --mcp-config as JSON'); }
+    if (!config?.mcpServers || typeof config.mcpServers !== 'object' || Array.isArray(config.mcpServers)) {
+      throw new Error('--mcp-config must contain an mcpServers object');
+    }
+    for (const [name, target] of Object.entries(config.mcpServers)) {
+      if (!target || typeof target !== 'object' || Array.isArray(target)) throw new Error('Invalid local MCP target');
+      // Standard config files often identify Streamable HTTP by URL without a type.
+      add(name, (target.type === 'streamable-http' || (target.type === undefined && target.url !== undefined))
+        ? { ...target, type: 'http' } : target);
+    }
+  }
+  for (const [flag, field] of [['mcp', 'command'], ['mcp-url', 'url']]) {
+    for (const value of values[flag] ?? []) {
+      const equals = value.indexOf('=');
+      if (equals <= 0 || equals === value.length - 1) throw new Error(`Use --${flag} NAME=${field.toUpperCase()}`);
+      add(value.slice(0, equals), { type: field === 'command' ? 'stdio' : 'http', [field]: value.slice(equals + 1) });
+    }
+  }
+  if (command === 'send' && Object.keys(servers).length && values['client-id'] === undefined) {
+    throw new Error("send with local MCP requires the listener's --client-id");
+  }
+  return { clientId: values['client-id'], mcpServers: servers };
+}
 async function main() {
   const { values: v, positionals } = parseArgs({ allowPositionals: true, options: {
+    mcp: { type: 'string', multiple: true }, 'mcp-url': { type: 'string', multiple: true },
     ...Object.fromEntries(strings.map(name => [name, { type: 'string' }])),
     ...Object.fromEntries(['auto-approve-reply','require-reply-approval','connect-mac','no-connect-mac','once','help'].map(name => [name, { type: 'boolean' }]))
   } });
@@ -27,6 +64,9 @@ async function main() {
   const timeoutMs = Number(v['timeout-ms'] ?? 600000);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647) throw new Error('Invalid timeout-ms');
   if (!['init','send','listen','profiles','rotate-secret','delete'].includes(command)) throw new Error('Unknown command; use --help');
+  if (!['send','listen'].includes(command) && ['client-id','mcp','mcp-url','mcp-config'].some(flag => v[flag] !== undefined)) {
+    throw new Error('Local MCP flags are only accepted by send and listen');
+  }
   if (v.server) serverOrigin(v.server);
   const store = new CredentialStore(v['config-dir']);
   const setup = (serverUrl = v.server) => ({ serverUrl, clientLabel: v.label, timeoutMs,
@@ -62,7 +102,8 @@ async function main() {
   const direct = !!process.env.NIA_ROUTINE_ID && !!process.env.NIA_ROUTINE_WEBHOOK_SECRET && !v.profile;
   const p = direct ? undefined : await store.get(v.profile);
   if (p && v.server && new URL(v.server).origin !== p.serverUrl) throw new Error('Server must match the saved profile');
-  const client = new RoutineWebhookClient(p ?? { serverUrl: v.server });
+  const mcp = await localMcpOptions(v, command);
+  const client = new RoutineWebhookClient({ ...(p ?? { serverUrl: v.server }), ...mcp });
   if (command === 'send') {
     if (!v['topic-key']) throw new Error('send requires --topic-key');
     let message = v.message;
@@ -79,6 +120,7 @@ async function main() {
   if (command === 'listen') {
     let matched = false, timedOut = false;
     const stream = client.listen({ initialCursor: p?.cursor,
+      onReady: Object.keys(mcp.mcpServers).length ? () => process.stderr.write('Local MCP listener ready.\n') : undefined,
       onReply: async reply => {
         if (v['topic-key'] && reply.topicKey !== v['topic-key']) return;
         await output(reply); matched = true;
@@ -89,8 +131,9 @@ async function main() {
       onProcessed: () => { if (v.once && matched) stream.stop(); },
       onError: () => process.stderr.write('Reply stream interrupted; reconnecting.\n')
     });
-    const timer = setTimeout(() => { timedOut = true; stream.stop(); }, timeoutMs);
-    const stop = () => stream.stop(); process.once('SIGINT', stop); process.once('SIGTERM', stop);
+    const timer = v.once || v['timeout-ms'] !== undefined
+      ? setTimeout(() => { timedOut = true; stream.stop(); }, timeoutMs) : undefined;
+    const stop = () => stream.stop(); process.on('SIGINT', stop); process.on('SIGTERM', stop);
     try { await stream.run(); } finally { clearTimeout(timer); process.off('SIGINT', stop); process.off('SIGTERM', stop); }
     if (timedOut) throw new Error('Listen timed out'); return;
   }

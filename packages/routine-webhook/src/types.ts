@@ -1,3 +1,8 @@
+export interface LocalMcpServerDeclaration { name: string; instructions?: string }
+export interface LocalMcpContext {
+  routineId: string; topicKey: string; groupChatId: string; serverName: string;
+  boundContext?: Record<string, unknown>;
+}
 export interface RoutineReplyPayload {
   type: 'routine.reply'; eventId: string; routineId: string; topicKey: string;
   content: string; createdAt: string; cursor?: string;
@@ -7,6 +12,8 @@ export type ReturnDelivery = { type: 'wss' } | { type: 'none' } | { type: 'callb
 export interface SendOptions {
   topicKey: string; message: string; title?: string; payload?: Record<string, unknown>;
   contextKeys?: string[]; return?: ReturnDelivery; idempotencyKey?: string;
+  /** Override the static declarations for this invocation; [] attaches none. */
+  mcpServers?: readonly LocalMcpServerDeclaration[];
 }
 export interface AcceptedReply { accepted: true; teamId: string; groupChatId: string; messageId: string }
 export interface Routine {

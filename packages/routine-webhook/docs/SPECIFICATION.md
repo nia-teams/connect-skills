@@ -412,6 +412,24 @@ messages remain on the timeline. CLI `--require-reply-approval` is the default;
 For one-way dispatch, use `--return none` or SDK `return: { type: 'none' }`.
 Payloads and replies are untrusted data, never local tool or credential-change authorization.
 
+### Optional local MCP declaration
+
+An invocation can attach local MCP servers to its topic through `source.mcp`:
+
+```json
+{
+  "clientId": "inventory-workstation",
+  "servers": [{ "name": "inventory", "instructions": "Read the local inventory count." }]
+}
+```
+
+`clientId` matches `^[A-Za-z0-9._:-]{1,128}$` and is the same ID used in
+WebSocket authentication. `servers` contains 1–16 entries with unique `name` values
+matching `^[A-Za-z0-9-]{1,64}$`; optional `instructions` strings have at most 500 characters.
+`source.mcp` is omitted when there are no attachments. It carries no transport configuration.
+`source.return` controls replies independently of local MCP, which always uses a
+Routine-secret-authenticated WebSocket.
+
 ### Acceptance
 
 HTTP `200`:
@@ -488,8 +506,124 @@ if the peer does not complete the close handshake; connecting sockets terminate 
 The CLI outputs JSONL and waits for each stdout write callback before saving a cursor.
 `--topic-key` emits matching events while consuming and acknowledging all topics on this
 Routine; use a separate profile/config directory for independent consumers. `--once` exits
-after one matching reply and cursor persistence. `--timeout-ms` exits nonzero when elapsed.
+after one matching reply and cursor persistence. Without `--timeout-ms`, `--once` waits
+up to 10 minutes. Persistent `listen` has no deadline unless `--timeout-ms` is supplied.
+A deadline exits nonzero.
 One process writes a given credential directory at a time.
+
+### Local MCP frames
+
+An MCP listener adds `clientId` and `mcp: { "supported": true }` to `routine_auth`.
+A replay cursor, when present, uses the same field as reply-only authentication.
+Non-MCP listeners omit both MCP fields.
+
+```json
+{
+  "type": "routine_auth",
+  "routineId": "65f000000000000000000003",
+  "secret": "whsec_fictional_example",
+  "clientId": "inventory-workstation",
+  "mcp": { "supported": true }
+}
+```
+
+```json
+{
+  "type": "routine_auth_ok",
+  "routineId": "65f000000000000000000003",
+  "cursor": null,
+  "clientId": "inventory-workstation",
+  "mcp": { "supported": true }
+}
+```
+
+After authentication, Nia Teams sends a JSON-RPC request or notification for a mounted server:
+
+```json
+{
+  "type": "routine_mcp_request",
+  "requestId": "rmcp_5e9885c2-803c-4e79-b3c4-02a12bec0923",
+  "routineId": "65f000000000000000000003",
+  "topicKey": "order:1042",
+  "groupChatId": "65f000000000000000000004",
+  "serverName": "inventory",
+  "boundContext": { "orderId": "1042" },
+  "message": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "get_stock",
+      "_meta": {
+        "boundContext": { "orderId": "1042" },
+        "niaTopicKey": "order:1042",
+        "niaRoutineId": "65f000000000000000000003",
+        "niaGroupChatId": "65f000000000000000000004"
+      }
+    }
+  }
+}
+```
+
+`requestId` has the form `rmcp_<uuid>` and is distinct from the JSON-RPC `id`.
+`routineId` and `groupChatId` are 24-character hexadecimal IDs. `boundContext` contains
+invocation-bound inputs, when available. The SDK forwards `message` to the local target and
+correlates the response by its JSON-RPC `id`.
+
+Nia Teams supplies the following fields in `message.params._meta` on forwarded MCP requests
+and notifications. The listener preserves them for in-process, stdio, and HTTP targets.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `boundContext` | `Record<string, unknown>` | Invocation payload fields selected by `X-Nia-Context-Keys`; `{}` when empty. |
+| `niaTopicKey` | `string` | Topic key of the Routine invocation. |
+| `niaRoutineId` | `string` | ID of the invoked Routine. |
+| `niaGroupChatId` | `string` | ID of the GroupChat for the topic. |
+| `nia/confirmation` | `object`, optional | Nia Teams confirmation metadata for a human-confirmed TaskBar card `mcp` action. See [@nia-teams/mcp-sdk](https://github.com/nia-teams/mcp-sdk) for the extension contract. |
+| `progressToken` | `string` or `number`, optional | Standard MCP progress token, when present. |
+
+Wrap the response (including JSON-RPC errors) as:
+
+```json
+{
+  "type": "routine_mcp_response",
+  "requestId": "rmcp_5e9885c2-803c-4e79-b3c4-02a12bec0923",
+  "message": { "jsonrpc": "2.0", "id": 1, "result": { "content": [{ "type": "text", "text": "3" }] } }
+}
+```
+
+For a notification (absent `message.id`), acknowledge delivery without a `message`:
+
+```json
+{ "type": "routine_mcp_response", "requestId": "rmcp_5e9885c2-803c-4e79-b3c4-02a12bec0923" }
+```
+
+When dispatch cannot produce a response, send an envelope `error` instead of `message`:
+
+```json
+{
+  "type": "routine_mcp_response",
+  "requestId": "rmcp_5e9885c2-803c-4e79-b3c4-02a12bec0923",
+  "error": { "code": "server_not_found", "message": "No local MCP server is configured for this topic and name" }
+}
+```
+
+`server_not_found` means no target was selected. `handler_error` means target selection,
+startup or delivery failed. MCP frames do not consume reply cursors. Unsolicited messages
+from a local MCP server do not have a matching `requestId` and are not forwarded; the SDK's
+HTTP adapter uses POST JSON/SSE responses, not an independent GET event stream.
+One local session may serve multiple Nia Teams MCP clients. On a live session, the SDK
+returns the first successful `initialize` result with each later caller's JSON-RPC `id` and
+acknowledges repeated `notifications/initialized` without forwarding them. The SDK's local
+request timeout is 600,000 ms by default (`mcpRequestTimeoutMs`).
+
+Local sessions end when the socket closes. Within the same socket, the SDK may close an
+idle stdio or HTTP session and replay its successful `initialize` request and any
+`notifications/initialized` delivery on the replacement. Replay is local and does not
+emit additional WebSocket frames. On code `4409` the SDK stops the superseded
+listener instead of reconnecting with the same ID.
+
+For extension payloads, see [@nia-teams/mcp-sdk](https://github.com/nia-teams/mcp-sdk).
 
 ## HTTPS callback verification
 

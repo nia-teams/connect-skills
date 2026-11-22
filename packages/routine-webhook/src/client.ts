@@ -4,16 +4,24 @@ import { signature } from './callback.js';
 import { RoutineReplyStream, type ReplyStreamOptions } from './stream.js';
 import type { AcceptedReply, SendOptions } from './types.js';
 import { CredentialStore } from './store.js';
-export interface ClientOptions {
+import { localMcpClientId, mcpDeclarations, staticDeclarations, type LocalMcpOptions } from './local-mcp.js';
+export interface ClientOptions extends LocalMcpOptions {
   serverUrl?: string; webhookUrl?: string; routineId?: string; webhookSecret?: string;
   getBearerToken?: () => string | Promise<string>; retries?: number;
 }
 export class RoutineWebhookClient {
   readonly serverUrl: string; readonly webhookUrl: string; readonly routineId: string;
+  readonly clientId: string;
   private readonly secret?: string;
+  private readonly declarations: ReturnType<typeof staticDeclarations>;
+  private readonly streams = new Set<RoutineReplyStream>();
+  private closing?: Promise<void>;
   private readonly options: ClientOptions;
   constructor(options: ClientOptions = {}) {
-    this.options = options;
+    this.clientId = localMcpClientId(options.clientId);
+    this.declarations = staticDeclarations(options.mcpServers);
+    if (options.resolveMcp !== undefined && typeof options.resolveMcp !== 'function') throw new Error('Invalid resolveMcp');
+    this.options = { ...options, mcpServers: options.mcpServers && { ...options.mcpServers } };
     const webhook = options.webhookUrl ? validateUrl(options.webhookUrl) : undefined;
     this.serverUrl = serverOrigin(options.serverUrl ?? webhook?.origin);
     this.routineId = options.routineId ?? (webhook ? decodeURIComponent(webhook.pathname.split('/').pop()!) : process.env.NIA_ROUTINE_ID) ?? '';
@@ -24,10 +32,12 @@ export class RoutineWebhookClient {
     if (!!this.secret === !!options.getBearerToken) throw new Error('Choose exactly one auth mode: Routine secret or getBearerToken');
     if (options.retries !== undefined && (!Number.isInteger(options.retries) || options.retries < 0 || options.retries > 5)) throw new Error('retries must be 0..5');
   }
-  static async fromProfile(options: { configDir?: string; profile?: string } = {}): Promise<RoutineWebhookClient> {
-    return new RoutineWebhookClient(await new CredentialStore(options.configDir).get(options.profile));
+  static async fromProfile(options: LocalMcpOptions & { configDir?: string; profile?: string } = {}): Promise<RoutineWebhookClient> {
+    const { configDir, profile, ...mcp } = options;
+    return new RoutineWebhookClient({ ...await new CredentialStore(configDir).get(profile), ...mcp });
   }
   async send(input: SendOptions): Promise<AcceptedReply> {
+    if (this.closing) throw new Error('Routine client is closed');
     topicKey(input.topicKey);
     if (typeof input.message !== 'string' || !input.message.trim()) throw new Error('message is required');
     const key = input.idempotencyKey ?? randomUUID();
@@ -41,8 +51,10 @@ export class RoutineWebhookClient {
     const payload = input.payload ?? {};
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('payload must be an object');
     if (input.contextKeys?.some(k => !/^[A-Za-z0-9_.:-]+$/.test(k) || !Object.hasOwn(payload, k))) throw new Error('contextKeys must name top-level payload keys');
+    const servers = input.mcpServers === undefined ? this.declarations : mcpDeclarations(input.mcpServers);
+    const mcp = servers.length ? { clientId: this.clientId, servers } : undefined;
     const body = JSON.stringify({ protocol: 'nia-routine-source-v1', message: input.message,
-      ...(input.title !== undefined ? { title: input.title } : {}), source: { type: 'external-agent', topicKey: input.topicKey, return: delivery }, payload });
+      ...(input.title !== undefined ? { title: input.title } : {}), source: { type: 'external-agent', topicKey: input.topicKey, return: delivery, ...(mcp ? { mcp } : {}) }, payload });
     const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Idempotency-Key': key };
     if (input.contextKeys?.length) headers['X-Nia-Context-Keys'] = input.contextKeys.join(',');
     if (this.secret) headers['X-Hub-Signature-256'] = signature(body, this.secret);
@@ -55,8 +67,18 @@ export class RoutineWebhookClient {
     if (result.accepted !== true || ['teamId', 'groupChatId', 'messageId'].some(k => typeof result[k as keyof AcceptedReply] !== 'string')) throw new Error('Invalid invocation response');
     return result;
   }
-  listen(options: Omit<ReplyStreamOptions, 'serverUrl' | 'routineId' | 'webhookSecret'>): RoutineReplyStream {
+  listen(options: Omit<ReplyStreamOptions, 'serverUrl' | 'routineId' | 'webhookSecret' | 'clientId' | 'mcpServers' | 'resolveMcp'>): RoutineReplyStream {
+    if (this.closing) throw new Error('Routine client is closed');
     if (!this.secret) throw new Error('WSS requires a Routine secret');
-    return new RoutineReplyStream({ ...options, serverUrl: this.serverUrl, routineId: this.routineId, webhookSecret: this.secret });
+    const stream = new RoutineReplyStream({ ...options, serverUrl: this.serverUrl, routineId: this.routineId,
+      mcpRequestTimeoutMs: options.mcpRequestTimeoutMs ?? this.options.mcpRequestTimeoutMs,
+      mcpSessionIdleTimeoutMs: options.mcpSessionIdleTimeoutMs ?? this.options.mcpSessionIdleTimeoutMs,
+      webhookSecret: this.secret, clientId: this.clientId, mcpServers: this.options.mcpServers, resolveMcp: this.options.resolveMcp,
+    }, () => this.streams.delete(stream));
+    this.streams.add(stream);
+    return stream;
+  }
+  close(): Promise<void> {
+    return this.closing ??= Promise.allSettled([...this.streams].map(stream => stream.close())).then(() => { this.streams.clear(); });
   }
 }

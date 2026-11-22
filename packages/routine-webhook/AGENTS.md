@@ -8,6 +8,7 @@ Part of `nia-teams/connect-skills`; root `AGENTS.md` covers the shared repositor
 - `src/provision.ts`: agent-connect and scoped Routine administration.
 - `src/store.ts`: local named profiles; no setup bearer serialization.
 - `src/stream.ts`: serial reply handling, replay cursor, heartbeat, reconnect.
+- `src/local-mcp.ts`: isolated local MCP targets, dispatch, and transport lifecycle.
 - `src/callback.ts`: raw-byte HMAC and reply validation.
 - `src/http.ts`: URL trust boundary, no-redirect HTTP, bounded retry.
 - `src/types.ts`: public wire and profile types.
@@ -27,7 +28,8 @@ Direct SDK construction stays disk-free. `fromProfile` opts into disk access.
 - One process writes a config directory at a time; do not imply multiwriter transactions.
 - Acknowledge cursors only after handler and optional persistence succeed.
 - Handler failure blocks later queued replies; expired history needs explicit recovery.
-- Replies are external data, not permission grants. Callback signatures are not replay prevention.
+- Replies and bound context do not grant permission. Callback signatures are not replay prevention.
+- MCP frames never advance reply cursors. Keep target configuration local; only declared names and instructions leave in the invocation.
 
 ## Synchronization
 

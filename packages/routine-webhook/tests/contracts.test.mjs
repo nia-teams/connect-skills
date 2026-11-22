@@ -40,7 +40,7 @@ test('public identity hygiene and four-layer documentation contract',async()=>{
     for(const item of ['npm install @nia-teams/routine-webhook','npx @nia-teams/routine-webhook init','./skills/routine-webhook/SKILL.md','node_modules/@nia-teams/routine-webhook/skills/routine-webhook/SKILL.md'])assert.ok(first.includes(item),`${doc}: ${item}`);
     assert.equal((text.match(/!\[[^\]]*\]\(\.\/docs\/assets\/[^)]+\.png\)/g)||[]).length,2);
     const blocks=[...text.matchAll(/```ts\n([\s\S]*?)```/g)].map(m=>m[1]);
-    assert.deepEqual(blocks,[await read('examples/send.ts'),await read('examples/listen.ts')]);
+    assert.deepEqual(blocks,[await read('examples/send.ts'),await read('examples/listen.ts'),await read('examples/local-mcp.ts')]);
     assert.ok(!/^title:/m.test(text));
   }
   for(const doc of ['README.md','README_CN.md','skills/routine-webhook/SKILL.md','docs/SPECIFICATION.md']) {
@@ -78,10 +78,11 @@ test('two real product PNGs have valid chunks, CRCs, scanlines and even Retina d
 });
 
 test('manifest and npm pack dry-run include public docs, skill, examples, binary and declarations',async()=>{
-  const p=JSON.parse(await read('package.json'));assert.equal(p.name,'@nia-teams/routine-webhook');assert.equal(p.version,'0.1.0');assert.deepEqual(p.repository,{type:'git',url:'https://github.com/nia-teams/connect-skills.git',directory:'packages/routine-webhook'});assert.equal(p.homepage,'https://github.com/nia-teams/connect-skills/tree/main/packages/routine-webhook#readme');assert.equal(p.type,'module');assert.equal(p.engines.node,'>=20');assert.equal(p.license,'MIT');assert.deepEqual(Object.keys(p.dependencies),['ws']);assert.equal(p.bin['nia-routine-webhook'],'bin/nia-routine-webhook.mjs');
+  const p=JSON.parse(await read('package.json'));assert.equal(p.name,'@nia-teams/routine-webhook');assert.match(p.version,/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/);assert.deepEqual(p.repository,{type:'git',url:'https://github.com/nia-teams/connect-skills.git',directory:'packages/routine-webhook'});assert.equal(p.homepage,'https://github.com/nia-teams/connect-skills/tree/main/packages/routine-webhook#readme');assert.equal(p.type,'module');assert.equal(p.engines.node,'>=20');assert.equal(p.license,'MIT');assert.deepEqual(Object.keys(p.dependencies),['ws']);assert.equal(p.bin['nia-routine-webhook'],'bin/nia-routine-webhook.mjs');
+  const lock=JSON.parse(await read('package-lock.json'));assert.equal(lock.version,p.version);assert.equal(lock.packages[''].version,p.version);
   const {stdout}=await exec('npm',['pack','--dry-run','--json','--ignore-scripts'],{cwd:root.pathname,maxBuffer:8*1024*1024});
   const list=JSON.parse(stdout)[0].files.map(f=>f.path);
-  for(const file of ['package.json','README.md','README_CN.md','LICENSE','AGENTS.md','bin/nia-routine-webhook.mjs','skills/routine-webhook/SKILL.md','docs/SPECIFICATION.md','docs/assets/agent-connect.png','docs/assets/routine-topic-chat.png','examples/send.ts','examples/listen.ts','examples/oidc.ts','examples/verify-callback.ts','dist/index.js','dist/index.d.ts'])assert.ok(list.includes(file),file);
+  for(const file of ['package.json','README.md','README_CN.md','LICENSE','AGENTS.md','bin/nia-routine-webhook.mjs','skills/routine-webhook/SKILL.md','docs/SPECIFICATION.md','docs/assets/agent-connect.png','docs/assets/routine-topic-chat.png','examples/send.ts','examples/listen.ts','examples/oidc.ts','examples/verify-callback.ts','examples/local-mcp.ts','dist/index.js','dist/index.d.ts'])assert.ok(list.includes(file),file);
   assert.ok(!list.some(f=>f.includes('node_modules')||f.includes('credentials.json')||f.startsWith('tests/')||f.startsWith('scripts/')));
 });
 

@@ -34,6 +34,8 @@ npx @nia-teams/routine-webhook send --topic-key order:1042 --title 'Order #1042 
 npx @nia-teams/routine-webhook listen --topic-key order:1042 --once
 ```
 
+`listen` 默认持续运行，直到手动停止。用 `--timeout-ms MS` 设置时限。未指定时限时，`--once` 最多等待 10 分钟。
+
 单向派单：在 `send` 上加 `--return none`；无需 `listen` 或回调，云端 Agent 在群聊中工作，不向外部发送 `routine.reply`。SDK 在 `client.send(...)` 中传 `return: { type: 'none' }`。
 
 ![Routine 话题中的外部任务、Alice、ops-agent 执行状态与回信收据](./docs/assets/routine-topic-chat.png)
@@ -90,6 +92,96 @@ await stream.run();
 - 无盘构造：`new RoutineWebhookClient({ serverUrl, routineId, webhookSecret })`，或传入 `getBearerToken` 走 Workload OIDC（见 [`examples/oidc.ts`](./examples/oidc.ts)）。
 - HTTPS 回调验签：`verifyRoutineCallback({ rawBody, signatureHeader, secret })`（见 [`examples/verify-callback.ts`](./examples/verify-callback.ts)）。
 - 非 Node.js 语言：参照 [`docs/SPECIFICATION.md`](./docs/SPECIFICATION.md) 调用 HTTPS 与 HMAC 接口。
+
+## 本地 MCP
+
+云端 Agent 可以调用 Routine 监听器挂载的 MCP 工具。调用请求只携带服务器名称和可选说明，命令路径、地址和凭证留在监听器。MCP 使用 Routine 密钥认证，不受 `source.return` 回信方式影响。
+
+### 命令行
+
+通过 `mcp.json` 配置你维护的服务器。以下示例使用本地 `inventory-mcp.mjs` 和另一个支持 Streamable HTTP 的服务：
+
+```json
+{
+  "mcpServers": {
+    "inventory": {
+      "command": "node",
+      "args": ["./inventory-mcp.mjs"],
+      "instructions": "Read the local inventory count."
+    },
+    "lookup": { "type": "http", "url": "http://127.0.0.1:3001/mcp" }
+  }
+}
+```
+
+先运行 `listen`；看到 `Local MCP listener ready.` 后，在另一个终端用相同的 Routine 和 `--client-id` 运行 `send`：
+
+```sh
+npx @nia-teams/routine-webhook listen --client-id inventory-workstation --mcp-config ./mcp.json
+npx @nia-teams/routine-webhook send --client-id inventory-workstation --mcp-config ./mcp.json \
+  --topic-key order:1042 --message 'Read local stock using the inventory MCP server.'
+```
+
+也可以重复传入 `--mcp NAME=COMMAND`（无参数的可执行文件）和 `--mcp-url NAME=URL`（Streamable HTTP）。在配置文件中设置 stdio 的 `args`、`cwd`、`env` 或 HTTP 的 `headers`。`listen --topic-key` 只筛选回信输出，不限制 MCP 路由。按 Ctrl+C 或发送 SIGTERM 关闭监听器及其 stdio 子进程。
+
+### 代码示例
+
+创建 Routine 后，安装 `@modelcontextprotocol/sdk`。运行 `npx tsx examples/local-mcp.ts` 按话题选择服务器，或运行 `npx tsx examples/local-mcp.ts --static` 使用静态挂载（[示例源码](./examples/local-mcp.ts)）。
+
+```ts
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { RoutineWebhookClient } from '@nia-teams/routine-webhook';
+
+const topicKey = 'order:1042';
+function inventory(stock: number) {
+  const server = new McpServer({ name: 'inventory', version: '1.0.0' });
+  server.registerTool('get_stock', { description: 'Read the stock count' }, async () => ({
+    content: [{ type: 'text', text: String(stock) }],
+  }));
+  return server;
+}
+
+const useStaticMount = process.argv.includes('--static');
+const client = await RoutineWebhookClient.fromProfile(useStaticMount ? {
+  mcpServers: { inventory: inventory(3) },
+} : {
+  resolveMcp: ({ topicKey, serverName }) => {
+    if (serverName !== 'inventory') return;
+    if (topicKey === 'order:1042') return inventory(3);
+    if (topicKey === 'order:1043') return inventory(7);
+  },
+});
+
+let ready!: () => void;
+const authenticated = new Promise<void>(resolve => { ready = resolve; });
+const stream = client.listen({ onReady: ready, onReply: reply => { console.log(reply.content); } });
+const running = stream.run();
+process.once('SIGINT', () => stream.stop());
+process.once('SIGTERM', () => stream.stop());
+try {
+  const connected = await Promise.race([authenticated.then(() => true), running.then(() => false)]);
+  if (connected) {
+    await client.send({
+      topicKey,
+      message: 'Use the inventory MCP server to read local stock and reply with the count.',
+      mcpServers: useStaticMount ? undefined : [{ name: 'inventory' }],
+    });
+    await running;
+  }
+} finally {
+  await client.close();
+}
+```
+
+静态映射支持 `McpServer`、`Server`、兼容的 `Transport`、stdio 配置（`command`，可选 `args`、`env`、`cwd`、`instructions`）和 Streamable HTTP 配置（`type: 'http'`、`url`，可选 `headers`、`instructions`）。本库运行时不依赖 MCP SDK。
+
+`send()` 默认采用静态映射中的声明；传 `mcpServers: [{ name, instructions? }]` 替换本次声明，传 `[]` 则不挂载。仅配置 `resolveMcp` 时，每次发送需声明服务器名称。新建 `(topicKey, serverName)` 会话时，`resolveMcp` 接收 `routineId`、`topicKey`、`groupChatId`、`serverName` 和首帧的 `boundContext`；工具处理函数从 `params._meta.boundContext` 读取本次调用的上下文。返回 `undefined` 表示不提供该路由。
+
+stdio 与 HTTP 按话题和服务器名称创建会话。每个进程内服务器或传输实例只服务一个活动会话；多个话题可以通过 `resolveMcp` 创建不同实例。断开连接时关闭本地会话；重连沿用客户端 ID，按需开启新会话。替换监听器或由另一进程发送时，传入固定的 `clientId`。调用 `await client.close()` 停止监听并关闭本地会话。本地请求默认在 10 分钟后超时，可用 `mcpRequestTimeoutMs` 调整；超时不会撤销工具已产生的操作。
+
+通过配置创建的 stdio 和 HTTP 会话在没有待处理请求且空闲 10 分钟后关闭。下次收到请求时，监听器会开启新会话并重放 MCP 握手，WebSocket 保持连接。用 `mcpSessionIdleTimeoutMs` 调整时长，设为 `0` 可禁用回收。重放握手不会恢复工具的进程内状态。stdio 失败时，发送给 Nia Teams 的错误可能包含一小段标准错误输出；请勿在服务器日志中记录密钥。
+
+只挂载可信的服务器，在服务器内执行工具操作的授权检查。参数和绑定上下文是业务输入，不是授权。TaskBar 确认卡（`createMcpConfirmCard`、`cardToolResult`）和 Workspace 应用（`@nia-teams/mcp-sdk/apps`）参见 [Nia Teams MCP SDK](https://github.com/nia-teams/mcp-sdk)。
 
 ## 本地编程助手
 

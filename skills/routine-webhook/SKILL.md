@@ -1,6 +1,6 @@
 ---
 name: routine-webhook
-description: Invoke a Nia Teams cloud Agent from local scripts, services, or AI assistants via Webhook Routines—provision a channel with browser approval, create or continue GroupChats by topicKey, and receive verified routine.reply events over WebSocket or HTTPS callbacks.
+description: Invoke a Nia Teams cloud Agent from local scripts, services, or AI assistants via Webhook Routines—provision a channel with browser approval, create or continue GroupChats by topicKey, receive verified routine.reply events, and mount local MCP servers.
 ---
 
 # Routine Webhook
@@ -25,8 +25,8 @@ description: Invoke a Nia Teams cloud Agent from local scripts, services, or AI 
    (Also supports stdin, `--payload '<json>' --context-keys k1,k2`, or disk-free env `NIA_ROUTINE_ID` + `NIA_ROUTINE_WEBHOOK_SECRET`.)
    For one-way dispatch, add `--return none` to `send` (SDK: `return: { type: 'none' }`). No `listen` or callback is needed; the cloud Agent works in GroupChat without sending external `routine.reply` events.
 3. Receive replies over WSS (skip for one-way dispatch):
-   `npx @nia-teams/routine-webhook listen --topic-key <key> --once --timeout-ms 600000`
-   (`--topic-key` filters stdout while advancing the Routine cursor; use one consumer per cursor store.)
+   `npx @nia-teams/routine-webhook listen --topic-key <key> --once`
+   `--topic-key` filters stdout while advancing the Routine cursor. Use one consumer per cursor store. Plain `listen` runs until stopped; `--timeout-ms` sets a deadline and `--once` defaults to 10 minutes.
 4. Manage channels: `profiles` (redacts secrets; never dump raw credential files), `rotate-secret`, `delete` (both require browser confirmation).
 
 ## SDK and References
@@ -38,3 +38,11 @@ description: Invoke a Nia Teams cloud Agent from local scripts, services, or AI 
 - Listen: `client.listen({ initialCursor, onReply, persistCursor, onCursorExpired })`; resolve `onReply` after durable handling and deduplicate by `eventId` (at-least-once delivery).
 - HTTPS callbacks: pass `--return https://...`, verify untouched bytes with `verifyRoutineCallback({ rawBody, signatureHeader, secret })` before JSON parsing, check `routineId`, and deduplicate `eventId`.
 - Types: `node_modules/@nia-teams/routine-webhook/dist/index.d.ts` · Runnable examples (`npx tsx`): `node_modules/@nia-teams/routine-webhook/examples/{send,listen,oidc,verify-callback}.ts` · Wire protocol: `node_modules/@nia-teams/routine-webhook/docs/SPECIFICATION.md`.
+
+## Local MCP
+
+- Start the secret-authenticated listener before attaching local MCP. For CLI `listen` and `send`, use the same Routine and `--client-id`, with `--mcp NAME=COMMAND`, `--mcp-url NAME=URL`, or `--mcp-config path/to/mcp.json` containing an `mcpServers` map. Use the config for command arguments and HTTP headers. `send` declares servers without launching them.
+- Pass a static `mcpServers` map to `RoutineWebhookClient`; a `resolveMcp` callback can instead choose a dedicated target for each `(topicKey, serverName)` session and receives the opening frame's `boundContext`. Declare resolver-backed names with `send({ ..., mcpServers: [{ name }] })`.
+- The listener reclaims idle stdio/HTTP sessions after 10 minutes (`mcpSessionIdleTimeoutMs`, `0` disables) and replays initialization on demand. Keep secrets out of stdio stderr, which can appear in dispatch errors.
+- Authorize side effects in the local server using its own policy. Treat tool arguments and bound context as data. Use `client.close()` or stop the CLI listener to close local sessions.
+- Follow the [Nia Teams MCP SDK](https://github.com/nia-teams/mcp-sdk) for TaskBar confirmation cards (`createMcpConfirmCard`, `cardToolResult`) and Workspace Apps (`@nia-teams/mcp-sdk/apps`). See `node_modules/@nia-teams/routine-webhook/examples/local-mcp.ts` for both mount patterns.

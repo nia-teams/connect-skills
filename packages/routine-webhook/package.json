@@ -1,6 +1,6 @@
 {
   "name": "@nia-teams/routine-webhook",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Invoke Nia Teams Routine topics and receive authenticated replies from scripts and local agents.",
   "type": "module",
   "license": "MIT",
@@ -46,6 +46,7 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.23.15",

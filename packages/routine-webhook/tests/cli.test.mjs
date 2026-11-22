@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import http from 'node:http';
 import { WebSocketServer } from 'ws';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 const cli = new URL('../bin/nia-routine-webhook.mjs', import.meta.url).pathname;
@@ -97,4 +97,40 @@ test('CLI listen --once and --timeout-ms exit when peers ignore close frames', {
   deliver=false;
   const timeoutResult=await run(['listen','--timeout-ms','250'],env,'',2500);
   assert.equal(timeoutResult.code,1,timeoutResult.stderr);assert.match(timeoutResult.stderr,/Listen timed out/);
+});
+
+test('persistent listen omits the default deadline; --once and --timeout-ms retain deadlines', { timeout: 8000 }, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'routine-listen-timer-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const clock = join(dir, 'clock.mjs');
+  await writeFile(clock, `
+    const schedule = globalThis.setTimeout;
+    globalThis.setTimeout = (fn, ms, ...args) => schedule(fn, ms === 600000 ? 150 : ms, ...args);
+  `);
+  const server = http.createServer();
+  const wss = new WebSocketServer({ server, path: '/ws' });
+  wss.on('connection', ws => ws.on('message', raw => {
+    if (JSON.parse(raw).type === 'routine_auth') ws.send(JSON.stringify({ type: 'routine_auth_ok', routineId: 'routine1' }));
+  }));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    for (const ws of wss.clients) ws.terminate();
+    await Promise.all([new Promise(resolve => wss.close(resolve)), new Promise(resolve => server.close(resolve))]);
+  });
+  const env = { ...process.env, NODE_OPTIONS: `--import=${clock}`, NIA_ROUTINE_ID: 'routine1',
+    NIA_ROUTINE_WEBHOOK_SECRET: 'whsec_fixture', NIA_TEAMS_URL: `http://127.0.0.1:${server.address().port}` };
+  const peer = once(wss, 'connection');
+  const active = spawn(process.execPath, [cli, 'listen'], { env, stdio: 'ignore' });
+  t.after(() => active.kill('SIGKILL'));
+  const exit = once(active, 'close');
+  await peer;
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.equal(active.exitCode, null);
+  active.kill('SIGTERM');
+  assert.deepEqual(await exit, [0, null]);
+  for (const flags of [['--once'], ['--timeout-ms', '100']]) {
+    const result = await run(['listen', ...flags], env, '', 2500);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /Listen timed out/);
+  }
 });
