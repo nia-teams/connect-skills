@@ -5,7 +5,7 @@
 [English](./README.md)
 
 ```sh
-npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
+npx skills add nia-teams/connect-skills --skill "$SKILL_NAME" -y
 ```
 
 编程助手安装后加载 `skills/<name>/SKILL.md`；npm 包内路径为 `node_modules/@nia-teams/routine-webhook/skills/routine-webhook/SKILL.md`。
@@ -21,7 +21,7 @@ npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
 ## 本地 AI 快速接入
 
 ```sh
-npx skills add nia-teams/connect-skills --skill agent-bridge
+npx skills add nia-teams/connect-skills --skill agent-bridge -y
 ```
 
 按[适配器指引](./skills/agent-bridge/SKILL.md)在本地 AI 所在机器运行 `connect`。用微信扫描终端显示的二维码，注册或复用 Nia Teams 账号，并配对 Agent。

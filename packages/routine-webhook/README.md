@@ -186,7 +186,7 @@ Mount only trusted servers and authorize tool actions in the server. Treat argum
 ## Local Coding Assistants
 
 ```sh
-npx skills add nia-teams/connect-skills --skill routine-webhook
+npx skills add nia-teams/connect-skills --skill routine-webhook -y
 ```
 
 [MIT](./LICENSE) © Nia Teams

@@ -186,7 +186,7 @@ stdio 与 HTTP 按话题和服务器名称创建会话。每个进程内服务�
 ## 本地编程助手
 
 ```sh
-npx skills add nia-teams/connect-skills --skill routine-webhook
+npx skills add nia-teams/connect-skills --skill routine-webhook -y
 ```
 
 [MIT](./LICENSE) © Nia Teams

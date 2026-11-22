@@ -7,7 +7,7 @@ Connect Nia Teams Agents to Alibaba Cloud RAM, Tencent Cloud CAM, or Kubernetes 
 ![Nia Teams GroupChat: read-only SLS findings and a TaskBar elevation request](../../docs/assets/group-chat-overview.png)
 
 ```sh
-npx skills add nia-teams/connect-skills --skill cloud-oidc
+npx skills add nia-teams/connect-skills --skill cloud-oidc -y
 ```
 
 > **Where to run**: Install and load [`SKILL.md`](./SKILL.md) **in the environment that holds cloud or cluster administrator permissions** (for example, an engineer workstation or ops environment authenticated with administrator `aliyun` CLI, `tccli`, or `kubectl`)—**do not run this skill inside the target Agent being authorized**.

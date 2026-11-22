@@ -5,7 +5,7 @@ Connect local AI assistants to [Nia Teams](https://nia-teams.com) GroupChats, an
 [Chinese documentation](./README_CN.md)
 
 ```sh
-npx skills add nia-teams/connect-skills --skill "$SKILL_NAME"
+npx skills add nia-teams/connect-skills --skill "$SKILL_NAME" -y
 ```
 
 AI assistants load `skills/<name>/SKILL.md` after installation. For the npm package, load `node_modules/@nia-teams/routine-webhook/skills/routine-webhook/SKILL.md`.
@@ -21,7 +21,7 @@ AI assistants load `skills/<name>/SKILL.md` after installation. For the npm pack
 ## Local AI quick start
 
 ```sh
-npx skills add nia-teams/connect-skills --skill agent-bridge
+npx skills add nia-teams/connect-skills --skill agent-bridge -y
 ```
 
 Follow the [adapter instructions](./skills/agent-bridge/SKILL.md) to run `connect` on the local AI host. Scan the QR code shown in the terminal with WeChat to register or reuse your Nia Teams account and pair the Agent.

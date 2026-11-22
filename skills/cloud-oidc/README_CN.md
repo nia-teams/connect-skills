@@ -7,7 +7,7 @@
 ![Nia Teams 群聊：只读 SLS 检查与 TaskBar 临时权限申请](../../docs/assets/group-chat-overview.png)
 
 ```sh
-npx skills add nia-teams/connect-skills --skill cloud-oidc
+npx skills add nia-teams/connect-skills --skill cloud-oidc -y
 ```
 
 > **执行位置**：请在**持有云或集群管理员权限的环境**中（例如已登录管理员 `aliyun` CLI、`tccli` 或 `kubectl` 的工作台 / 运维环境）安装并加载 [`SKILL.md`](./SKILL.md) 执行配置；**不要在被授权的目标 Agent 沙箱内运行本 Skill**。
