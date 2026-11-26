@@ -27,7 +27,7 @@ npx @nia-teams/routine-webhook init --name 'Order Dispatch' --task 'Check invent
 ![为 Acme 的 ops-agent 授权 Routine Webhook CLI](./docs/assets/agent-connect.png)
 
 ```sh
-# 新 topicKey 建新群；相同 topicKey 在原群追发消息
+# 建立话题并唤醒 Agent
 npx @nia-teams/routine-webhook send --topic-key order:1042 --title 'Order #1042 · Inventory Sync' --message 'Check inventory and reserve 3 units of SKU ACME-42.'
 
 # 收到该话题的一条回信后退出
@@ -37,6 +37,14 @@ npx @nia-teams/routine-webhook listen --topic-key order:1042 --once
 `listen` 默认持续运行，直到手动停止。用 `--timeout-ms MS` 设置时限。未指定时限时，`--once` 最多等待 10 分钟。
 
 单向派单：在 `send` 上加 `--return none`；无需 `listen` 或回调，云端 Agent 在群聊中工作，不向外部发送 `routine.reply`。SDK 在 `client.send(...)` 中传 `return: { type: 'none' }`。
+
+对于**已有群聊的话题**，`send --no-wake`（SDK：`wake: false`）会续发消息，不唤醒 Agent，也不向成员发送推送通知。新话题首次发送时，即使传入 `--no-wake`，也会建群并唤醒 Agent。
+
+```sh
+npx @nia-teams/routine-webhook send --no-wake --topic-key order:1042 --message 'The supplier confirmed 12 units are in stock.'
+```
+
+后续使用相同 `topicKey` 发送消息时，传 `--wake` 或省略这两个参数会唤醒 Agent，此前的消息会作为上下文。即使是新话题，`--no-wake` 也默认采用 `--return none`，不接受 WebSocket 回信或 HTTPS 回调。`send` 只等待 HTTP 受理。
 
 ![Routine 话题中的外部任务、Alice、ops-agent 执行状态与回信收据](./docs/assets/routine-topic-chat.png)
 
@@ -52,15 +60,21 @@ CI 或容器无盘环境设置 `NIA_ROUTINE_ID`、`NIA_ROUTINE_WEBHOOK_SECRET`�
 
 ## 代码调用
 
-发消息（[`examples/send.ts`](./examples/send.ts)，`npx tsx examples/send.ts`）：
+向命令行示例中已建立的 `order:1042` 话题发送上下文，再唤醒 Agent（[`examples/send.ts`](./examples/send.ts)，`npx tsx examples/send.ts`）：
 
 ```ts
 import { RoutineWebhookClient } from '@nia-teams/routine-webhook';
 
 const client = await RoutineWebhookClient.fromProfile();
-const result = await client.send({
-  topicKey: 'order:1042',
+const topicKey = 'order:1042';
+await client.send({
+  topicKey,
   title: 'Order #1042 · Inventory Sync',
+  message: 'Order #1042 is ready for inventory review.',
+  wake: false,
+});
+const result = await client.send({
+  topicKey,
   message: 'Check inventory and reserve 3 units of SKU ACME-42.',
   payload: { orderId: '1042', sku: 'ACME-42', quantity: 3 },
   contextKeys: ['orderId'],

@@ -16,7 +16,7 @@ npx skills add nia-teams/connect-skills --skill "$SKILL_NAME" -y
 | --- | --- | --- |
 | [`agent-bridge`](./skills/agent-bridge/) | 微信扫码一次，将本地 AI 配对为远程 Agent 并加入群聊。 | [助手指引](./skills/agent-bridge/SKILL.md) |
 | [`cloud-oidc`](./skills/cloud-oidc/) | 通过 OIDC 为 Agent 提供零信任云与集群访问，支持阿里云、腾讯云和 Kubernetes，区分普通权限与人工批准的提权权限。 | [中文](./skills/cloud-oidc/README_CN.md) · [英文](./skills/cloud-oidc/README.md) · [助手指引](./skills/cloud-oidc/SKILL.md) |
-| [`routine-webhook`](./skills/routine-webhook/) · [`@nia-teams/routine-webhook`](./packages/routine-webhook/) (命令行工具与 TypeScript SDK) | 外部脚本、后端服务或本地编程助手按 `topicKey` 调用 Nia Teams 云端 Agent，通过 WebSocket 或 HTTPS 回调接收经过验证的 `routine.reply` 事件（Node.js 20+）。 | [中文](./packages/routine-webhook/README_CN.md) · [英文](./packages/routine-webhook/README.md) · [助手指引](./skills/routine-webhook/SKILL.md) |
+| [`routine-webhook`](./skills/routine-webhook/) · [`@nia-teams/routine-webhook`](./packages/routine-webhook/) (命令行工具与 TypeScript SDK) | 新建话题会唤醒 Nia Teams Agent；已有话题支持静默发消息。通过 WebSocket 或 HTTPS 回调接收已验证的回信（Node.js 20+）。 | [中文](./packages/routine-webhook/README_CN.md) · [英文](./packages/routine-webhook/README.md) · [助手指引](./skills/routine-webhook/SKILL.md) |
 
 ## 本地 AI 快速接入
 

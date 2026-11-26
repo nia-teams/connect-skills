@@ -86,6 +86,36 @@ test('Bearer OIDC mode is disk-free, defaults return none and accepts HTTPS call
   await assert.rejects(c.send({topicKey:'order:1042',message:'Check',return:{type:'wss'}}));assert.throws(()=>c.listen({onReply:()=>{}}));
 });
 
+test('send serializes explicit wake values, defaults silent return to none, and rejects conflicts', async t => {
+  const calls = [];
+  const { serverUrl } = await fixture(t, (req, res, raw) => {
+    calls.push({ body: JSON.parse(raw), raw, headers: req.headers });
+    json(res, accepted);
+  });
+  const client = new RoutineWebhookClient({ serverUrl, routineId: 'routine1', webhookSecret: secret });
+  const input = { topicKey: 'order:1042', message: 'Inventory update' };
+  assert.deepEqual(await client.send({ ...input, wake: false }), accepted);
+  assert.deepEqual(calls[0].body, {
+    protocol: 'nia-routine-source-v1', message: input.message, wake: false,
+    source: { type: 'external-agent', topicKey: input.topicKey, return: { type: 'none' } }, payload: {},
+  });
+  assert.equal(calls[0].headers['x-hub-signature-256'], `sha256=${createHmac('sha256', secret).update(calls[0].raw).digest('hex')}`);
+  await client.send({ ...input, wake: false, return: { type: 'none' } });
+  assert.deepEqual(calls[1].body, calls[0].body);
+  await client.send({ ...input, wake: true });
+  assert.equal(calls[2].body.wake, true);
+  assert.deepEqual(calls[2].body.source.return, { type: 'wss' });
+  const bearer = new RoutineWebhookClient({ serverUrl, routineId: 'routine1', getBearerToken: () => 'oidc-token' });
+  await bearer.send({ ...input, wake: false });
+  assert.deepEqual(calls[3].body, calls[0].body);
+  assert.equal(calls[3].headers.authorization, 'Bearer oidc-token');
+  for (const wake of ['false', null, 0]) await assert.rejects(client.send({ ...input, wake }), /wake must be a boolean/);
+  for (const delivery of [{ type: 'wss' }, { type: 'callback', url: 'https://example.com/routine' }]) {
+    await assert.rejects(client.send({ ...input, wake: false, return: delivery }), /wake: false requires return type none/);
+  }
+  assert.equal(calls.length, 4, 'invalid requests never reach the server');
+});
+
 test('URL boundaries reject credentials, query, fragment, paths and HTTP outside loopback; redirects do not forward secrets',async t=>{
   for(const serverUrl of ['https://a:b@nia-teams.com','https://nia-teams.com?', 'https://nia-teams.com/#', 'https://nia-teams.com?x=1','https://nia-teams.com/#x','https://nia-teams.com/path','http://example.com']) assert.throws(()=>new RoutineWebhookClient({serverUrl,routineId:'r',webhookSecret:secret}));
   let count=0;const {serverUrl}=await fixture(t,(req,res)=>{count++;res.writeHead(302,{Location:'/other'});res.end();});

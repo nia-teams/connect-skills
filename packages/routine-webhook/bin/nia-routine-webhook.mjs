@@ -7,7 +7,9 @@ import { RoutineWebhookClient, CredentialStore, initializeRoutine, withProvision
 const help = `nia-routine-webhook <init|send|listen|profiles|rotate-secret|delete>
   init --name NAME --task TEXT [--auto-approve-reply|--require-reply-approval] [--connect-mac|--no-connect-mac]
   send --topic-key KEY [--message TEXT | stdin] [--title TEXT] [--payload JSON]
-       [--context-keys k1,k2] [--return wss|none|https://...] [--idempotency-key KEY]
+       [--context-keys k1,k2] [--wake|--no-wake] [--return wss|none|https://...] [--idempotency-key KEY]
+       --no-wake posts silently to existing topics. The first send on a new topic still wakes the Agent.
+       With --no-wake, return defaults to none and other return modes are rejected.
   listen [--topic-key KEY] [--once] [--timeout-ms MS]
   listen runs until stopped unless --timeout-ms is set or --once is used (default 600000 ms).
   Local MCP (send/listen): --client-id ID [--mcp NAME=COMMAND] [--mcp-url NAME=URL] [--mcp-config PATH]
@@ -56,7 +58,7 @@ async function main() {
   const { values: v, positionals } = parseArgs({ allowPositionals: true, options: {
     mcp: { type: 'string', multiple: true }, 'mcp-url': { type: 'string', multiple: true },
     ...Object.fromEntries(strings.map(name => [name, { type: 'string' }])),
-    ...Object.fromEntries(['auto-approve-reply','require-reply-approval','connect-mac','no-connect-mac','once','help'].map(name => [name, { type: 'boolean' }]))
+    ...Object.fromEntries(['auto-approve-reply','require-reply-approval','connect-mac','no-connect-mac','wake','no-wake','once','help'].map(name => [name, { type: 'boolean' }]))
   } });
   const [command] = positionals;
   if (v.help || !command) { process.stdout.write(help); return; }
@@ -66,6 +68,10 @@ async function main() {
   if (!['init','send','listen','profiles','rotate-secret','delete'].includes(command)) throw new Error('Unknown command; use --help');
   if (!['send','listen'].includes(command) && ['client-id','mcp','mcp-url','mcp-config'].some(flag => v[flag] !== undefined)) {
     throw new Error('Local MCP flags are only accepted by send and listen');
+  }
+  if (v.wake || v['no-wake']) {
+    if (command !== 'send') throw new Error('--wake and --no-wake are only accepted by send');
+    if (v.wake && v['no-wake']) throw new Error('Choose either --wake or --no-wake');
   }
   if (v.server) serverOrigin(v.server);
   const store = new CredentialStore(v['config-dir']);
@@ -115,7 +121,7 @@ async function main() {
     const delivery = !v.return ? undefined : ['wss','none'].includes(v.return) ? { type: v.return } : { type: 'callback', url: v.return };
     await output(await client.send({ topicKey: v['topic-key'], message, title: v.title,
       payload: v.payload ? JSON.parse(v.payload) : undefined, contextKeys: v['context-keys']?.split(','),
-      return: delivery, idempotencyKey: v['idempotency-key'] })); return;
+      wake: v['no-wake'] ? false : v.wake, return: delivery, idempotencyKey: v['idempotency-key'] })); return;
   }
   if (command === 'listen') {
     let matched = false, timedOut = false;

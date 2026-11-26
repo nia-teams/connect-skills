@@ -11,6 +11,11 @@ export interface RoutineReply extends RoutineReplyPayload { cursor: string }
 export type ReturnDelivery = { type: 'wss' } | { type: 'none' } | { type: 'callback'; url: string };
 export interface SendOptions {
   topicKey: string; message: string; title?: string; payload?: Record<string, unknown>;
+  /**
+   * Defaults to true. Set false to append to an existing topic without waking the Agent or sending push notifications.
+   * The first send on a new topic still wakes the Agent. With false, return defaults to none and only none is accepted.
+   */
+  wake?: boolean;
   contextKeys?: string[]; return?: ReturnDelivery; idempotencyKey?: string;
   /** Override the static declarations for this invocation; [] attaches none. */
   mcpServers?: readonly LocalMcpServerDeclaration[];

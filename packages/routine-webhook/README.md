@@ -27,7 +27,7 @@ Run `init` above, open the printed URL, select your cloud Agent, and confirm aut
 ![Authorize Routine Webhook CLI for ops-agent in Acme](./docs/assets/agent-connect.png)
 
 ```sh
-# New topicKey creates a GroupChat; the same topicKey continues that GroupChat
+# Create the topic and wake the Agent
 npx @nia-teams/routine-webhook send --topic-key order:1042 --title 'Order #1042 · Inventory Sync' --message 'Check inventory and reserve 3 units of SKU ACME-42.'
 
 # Exit after receiving one matching reply
@@ -37,6 +37,14 @@ npx @nia-teams/routine-webhook listen --topic-key order:1042 --once
 `listen` runs until stopped by default. Use `--timeout-ms MS` to set a deadline. Without that flag, `--once` waits up to 10 minutes for a matching reply.
 
 One-way dispatch: add `--return none` to `send`, or pass `return: { type: 'none' }` to SDK `client.send(...)`. No `listen` or callback is needed; the cloud Agent works in GroupChat without sending external `routine.reply` events.
+
+For an **existing** topic chat, `send --no-wake` (SDK: `wake: false`) appends a message without waking the Agent or sending push notifications to people. The first send on a new topic creates the chat and wakes the Agent even with `--no-wake`.
+
+```sh
+npx @nia-teams/routine-webhook send --no-wake --topic-key order:1042 --message 'The supplier confirmed 12 units are in stock.'
+```
+
+A later send on the same `topicKey`, with `--wake` or neither wake flag, wakes the Agent with those messages in context. `--no-wake` defaults to `--return none` and rejects WSS and HTTPS callback returns, even for new topics. `send` waits only for HTTP acceptance.
 
 ![Routine topic with external task, Alice, ops-agent activity, and reply delivery receipt](./docs/assets/routine-topic-chat.png)
 
@@ -52,15 +60,21 @@ For disk-free CI or containers, set `NIA_ROUTINE_ID` and `NIA_ROUTINE_WEBHOOK_SE
 
 ## Programmatic SDK
 
-Send a task ([`examples/send.ts`](./examples/send.ts), `npx tsx examples/send.ts`):
+Post context to the existing `order:1042` topic from the CLI example, then wake the Agent ([`examples/send.ts`](./examples/send.ts), `npx tsx examples/send.ts`):
 
 ```ts
 import { RoutineWebhookClient } from '@nia-teams/routine-webhook';
 
 const client = await RoutineWebhookClient.fromProfile();
-const result = await client.send({
-  topicKey: 'order:1042',
+const topicKey = 'order:1042';
+await client.send({
+  topicKey,
   title: 'Order #1042 · Inventory Sync',
+  message: 'Order #1042 is ready for inventory review.',
+  wake: false,
+});
+const result = await client.send({
+  topicKey,
   message: 'Check inventory and reserve 3 units of SKU ACME-42.',
   payload: { orderId: '1042', sku: 'ACME-42', quantity: 3 },
   contextKeys: ['orderId'],

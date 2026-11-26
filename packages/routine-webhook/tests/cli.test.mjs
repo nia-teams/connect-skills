@@ -77,6 +77,43 @@ test('CLI environment-only send never creates config directory; errors are nonze
   const help=await run(['--help']);assert.equal(help.code,0);assert.match(help.stdout,/rotate-secret/);assert.match(help.stdout,/\[--connect-mac\|--no-connect-mac\]/);
 });
 
+test('CLI send supports --no-wake and --wake without changing omitted wake', async t => {
+  const calls = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    calls.push(JSON.parse(Buffer.concat(chunks).toString()));
+    json(res, { accepted: true, teamId: 't', groupChatId: 'g', messageId: 'm' });
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => new Promise(r => server.close(r)));
+  const env = { NIA_ROUTINE_ID: 'routine1', NIA_ROUTINE_WEBHOOK_SECRET: 'whsec_fixture',
+    NIA_TEAMS_URL: `http://127.0.0.1:${server.address().port}` };
+  const send = ['send', '--topic-key', 'order:1042', '--message', 'Inventory update'];
+  for (const flags of [[], ['--no-wake'], ['--no-wake', '--return', 'none'], ['--wake']]) {
+    const result = await run([...send, ...flags], env);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).accepted, true);
+  }
+  assert.ok(!Object.hasOwn(calls[0], 'wake'));
+  assert.deepEqual(calls.map(body => [body.wake, body.source.return.type]), [
+    [undefined, 'wss'], [false, 'none'], [false, 'none'], [true, 'wss'],
+  ]);
+  for (const [args, error] of [
+    [[...send, '--no-wake', '--wake'], /Choose either --wake or --no-wake/],
+    [[...send, '--no-wake', '--return', 'wss'], /wake: false requires return type none/],
+    [[...send, '--no-wake', '--return', 'https://example.com/routine'], /wake: false requires return type none/],
+    [['listen', '--no-wake'], /only accepted by send/],
+  ]) {
+    const result = await run(args, env, '', 3000);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, error);
+    assert.equal(result.stdout, '');
+  }
+  assert.equal(calls.length, 4, 'conflicting flags never send');
+  assert.match((await run(['--help'])).stdout, /\[--wake\|--no-wake\]/);
+});
+
 test('CLI listen --once and --timeout-ms exit when peers ignore close frames', {timeout:8000},async t=>{
   let deliver=true;
   const server=http.createServer();

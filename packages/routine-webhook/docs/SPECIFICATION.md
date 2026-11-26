@@ -388,8 +388,15 @@ There are no retries for redirects or HTTP 4xx responses. Each HTTP attempt time
 `message` is a nonempty task string. `title` is optional. `payload` is a JSON object;
 SDK default: `{}`. `topicKey` is required and matches `^[A-Za-z0-9._:/-]{1,256}$`.
 The pair `(routineId, topicKey)` maps 1:1 to a Routine-owned GroupChat. The first invocation creates a Routine
-GroupChat using `title` when provided; later invocations append to that GroupChat and wake
-the Agent. A topic key is routing data, not authorization or an idempotency key.
+GroupChat using `title` when provided; later invocations append to that GroupChat.
+A topic key is routing data, not authorization or an idempotency key.
+
+`wake` is an optional top-level boolean. Omission defaults to `true`; a non-boolean
+value returns HTTP `400` (`invalid_external_request`). For an existing topic
+GroupChat, `wake: false` appends the message without waking the Agent or sending
+push notifications to people. The first invocation on a new topic creates the
+GroupChat and wakes the Agent regardless of `wake`. A later waking invocation on
+the same topic includes earlier messages in the Agent’s context.
 
 Return modes:
 
@@ -399,7 +406,10 @@ Return modes:
 
 When a `nia-routine-source-v1` HTTP request omits `source.return`, the server defaults
 it to `{ "type": "none" }` for `Authorization: Bearer <oidcToken>` authentication and
-`{ "type": "wss" }` for Routine-secret authentication. The SDK sends these defaults explicitly.
+`{ "type": "wss" }` for Routine-secret authentication. For `wake: false`, the SDK
+and CLI send `{ "type": "none" }` and reject explicit `wss` and `callback` return modes,
+even on the first invocation of a new topic. Otherwise the SDK sends the authentication-based
+defaults explicitly. It omits `wake` unless the caller supplies it.
 If `wss` or `callback` is requested but the Routine has no configured `webhookSecret`,
 the server returns HTTP `403` with error code `no_secret`.
 

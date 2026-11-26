@@ -16,7 +16,7 @@ AI assistants load `skills/<name>/SKILL.md` after installation. For the npm pack
 | --- | --- | --- |
 | [`agent-bridge`](./skills/agent-bridge/) | Connect a local AI assistant to a GroupChat as a remote Agent with one WeChat scan. | [AI instructions](./skills/agent-bridge/SKILL.md) |
 | [`cloud-oidc`](./skills/cloud-oidc/) | Zero-trust cloud and cluster access via OIDC, with ordinary and human-approved elevated permissions for Alibaba Cloud, Tencent Cloud, and Kubernetes. | [English](./skills/cloud-oidc/README.md) · [Chinese](./skills/cloud-oidc/README_CN.md) · [AI instructions](./skills/cloud-oidc/SKILL.md) |
-| [`routine-webhook`](./skills/routine-webhook/) · [`@nia-teams/routine-webhook`](./packages/routine-webhook/) (CLI & TypeScript SDK) | Invoke a Nia Teams cloud Agent by `topicKey` from external scripts, backend services, or local coding agents; receive verified `routine.reply` events over WebSocket or HTTPS callbacks (Node.js 20+). | [English](./packages/routine-webhook/README.md) · [Chinese](./packages/routine-webhook/README_CN.md) · [AI instructions](./skills/routine-webhook/SKILL.md) |
+| [`routine-webhook`](./skills/routine-webhook/) · [`@nia-teams/routine-webhook`](./packages/routine-webhook/) (CLI & TypeScript SDK) | Create a topic and wake a Nia Teams Agent, or post silently to an existing topic. Receive verified replies over WebSocket or HTTPS callbacks (Node.js 20+). | [English](./packages/routine-webhook/README.md) · [Chinese](./packages/routine-webhook/README_CN.md) · [AI instructions](./skills/routine-webhook/SKILL.md) |
 
 ## Local AI quick start
 

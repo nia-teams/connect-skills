@@ -42,8 +42,11 @@ export class RoutineWebhookClient {
     if (typeof input.message !== 'string' || !input.message.trim()) throw new Error('message is required');
     const key = input.idempotencyKey ?? randomUUID();
     if (!/^[A-Za-z0-9._:-]{8,128}$/.test(key)) throw new Error('Invalid Idempotency-Key');
-    const delivery = input.return ?? { type: this.secret ? 'wss' : 'none' };
+    const { wake } = input;
+    if (wake !== undefined && typeof wake !== 'boolean') throw new Error('wake must be a boolean');
+    const delivery = input.return ?? { type: wake !== false && this.secret ? 'wss' : 'none' };
     if (!['wss', 'none', 'callback'].includes(delivery.type)) throw new Error('Invalid return type');
+    if (wake === false && delivery.type !== 'none') throw new Error('wake: false requires return type none');
     if (delivery.type === 'wss' && !this.secret) throw new Error('WSS requires a Routine secret');
     if (delivery.type === 'callback') {
       if (validateUrl(delivery.url).protocol !== 'https:') throw new Error('Callback URL must use HTTPS');
@@ -54,6 +57,7 @@ export class RoutineWebhookClient {
     const servers = input.mcpServers === undefined ? this.declarations : mcpDeclarations(input.mcpServers);
     const mcp = servers.length ? { clientId: this.clientId, servers } : undefined;
     const body = JSON.stringify({ protocol: 'nia-routine-source-v1', message: input.message,
+      ...(wake !== undefined ? { wake } : {}),
       ...(input.title !== undefined ? { title: input.title } : {}), source: { type: 'external-agent', topicKey: input.topicKey, return: delivery, ...(mcp ? { mcp } : {}) }, payload });
     const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Idempotency-Key': key };
     if (input.contextKeys?.length) headers['X-Nia-Context-Keys'] = input.contextKeys.join(',');

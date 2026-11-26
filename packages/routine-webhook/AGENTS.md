@@ -22,6 +22,7 @@ Direct SDK construction stays disk-free. `fromProfile` opts into disk access.
 - Protocol is `nia-routine-source-v1`; `(routineId, topicKey)` selects the topic.
 - HMAC signs the exact serialized bytes; retries retain body and idempotency key.
 - Choose one invocation auth mode. WSS requires the Routine secret.
+- Omit `wake` when unspecified. `wake: false` defaults to return `none` and rejects other return modes for any topic. The server suppresses wake and push notifications only for existing topic chats; a first invocation creates the chat and wakes the Agent.
 - Validate origins before sending credentials; reject redirects on HTTP and WSS.
 - Setup bearer and poll secret remain in memory; discard bearer references after use.
 - Atomic profile writes use a random temporary file and rename, modes `0700`/`0600`.
